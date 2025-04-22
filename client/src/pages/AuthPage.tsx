@@ -13,7 +13,7 @@ function TempPasswordView({ onSuccess }: { onSuccess: () => void }) {
       setError("");
       onSuccess();
     } else {
-      setError("Contraseña temporal incorrecta");
+      setError("Contraseña incorrecta");
     }
   };
 
@@ -22,14 +22,14 @@ function TempPasswordView({ onSuccess }: { onSuccess: () => void }) {
       <div className="fixed top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 z-40" />
       <div className="space-y-6 w-full max-w-md bg-white rounded-xl shadow-lg p-8 pt-10 relative z-50 mt-8">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Contraseña temporal</h1>
+          <h1 className="text-2xl font-bold">Contraseña de registro</h1>
           <p className="text-sm text-gray-500 mt-2">
-            Ingresa la contraseña temporal para poder registrarte
+            Ingresa la contraseña para poder registrarte
           </p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label htmlFor="tempPassword" className="block text-sm font-medium text-gray-700">Contraseña temporal</label>
+            <label htmlFor="tempPassword" className="block text-sm font-medium text-gray-700">Contraseña de registro</label>
             <input
               id="tempPassword"
               type="password"

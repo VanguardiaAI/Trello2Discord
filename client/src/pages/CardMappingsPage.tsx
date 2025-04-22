@@ -40,7 +40,6 @@ const CardMappingsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  const [trelloBoardId, setTrelloBoardId] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -79,8 +78,6 @@ const CardMappingsPage = () => {
       
       const data = await response.json();
       if (data.integration && data.integration.trello_board_id) {
-        setTrelloBoardId(data.integration.trello_board_id);
-        
         // Una vez que tenemos el ID del tablero, podemos obtener las tarjetas y otros datos
         await Promise.all([
           fetchTrelloCardsDirectly(data.integration.trello_board_id),
