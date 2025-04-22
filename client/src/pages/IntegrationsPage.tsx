@@ -74,7 +74,7 @@ const IntegrationsPage = () => {
       setLoadingBoards(true);
       setBoardsError(null);
       
-      const response = await fetch('http://localhost:5000/api/debug/trello/boards');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/boards`);
       const data = await response.json();
       
       if (data.status === 'success') {
@@ -94,7 +94,7 @@ const IntegrationsPage = () => {
       setLoadingMonitoring(true);
       setMonitoringError(null);
       
-      const response = await fetch('http://localhost:5000/api/debug/trello/monitoring-status');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/monitoring-status`);
       const data = await response.json();
       
       if (data.status === 'success') {
@@ -117,7 +117,7 @@ const IntegrationsPage = () => {
       setLoadingMonitoring(true);
       setMonitoringError(null);
       
-      const response = await fetch(`http://localhost:5000/api/debug/trello/start-monitoring/${boardId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/start-monitoring/${boardId}`, {
         method: 'POST'
       });
       
@@ -147,7 +147,7 @@ const IntegrationsPage = () => {
       setLoadingMonitoring(true);
       setMonitoringError(null);
       
-      const response = await fetch('http://localhost:5000/api/debug/trello/stop-monitoring', {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/stop-monitoring`, {
         method: 'POST'
       });
       
@@ -182,7 +182,7 @@ const IntegrationsPage = () => {
         return;
       }
 
-      const response = await fetch('http://localhost:5000/api/integration/', {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/integration/`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -262,7 +262,7 @@ const IntegrationsPage = () => {
       // Obtener información del tablero seleccionado para mostrar mejor información
       const selectedBoard = trelloBoards.find(board => board.id === selectedBoardId);
       
-      const response = await fetch('http://localhost:5000/api/integration/', {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/integration/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -342,7 +342,7 @@ const IntegrationsPage = () => {
         return;
       }
       setDeletingId(pendingDeleteId);
-      const response = await fetch(`http://localhost:5000/api/integration/${pendingDeleteId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/integration/${pendingDeleteId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
