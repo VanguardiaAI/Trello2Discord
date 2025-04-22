@@ -1,0 +1,24 @@
+# Entornos virtuales
+venv/
+
+# Archivos de entorno
+.env
+
+# Archivos de configuración de IDE
+*.vscode/
+*.idea/
+
+# Archivos de caché de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Archivos de logs
+*.log
+
+# Archivos de build
+build/
+dist/
+
+# Otros
+.DS_Store 
