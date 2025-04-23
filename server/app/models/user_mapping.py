@@ -20,8 +20,7 @@ class UserMapping:
         """
         Convierte el objeto a un diccionario para almacenar en MongoDB
         """
-        return {
-            '_id': self._id,
+        data = {
             'trello_user_id': self.trello_user_id,
             'trello_username': self.trello_username,
             'discord_user_id': self.discord_user_id,
@@ -31,6 +30,9 @@ class UserMapping:
             'updated_at': self.updated_at,
             'created_by': self.created_by
         }
+        if self._id is not None:
+            data['_id'] = self._id
+        return data
     
     @classmethod
     def from_dict(cls, data):
