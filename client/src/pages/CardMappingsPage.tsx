@@ -66,7 +66,7 @@ const CardMappingsPage = () => {
         throw new Error('Falta token o ID de integración');
       }
       
-      const response = await fetch(`http://localhost:5000/api/integration/${integrationId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/integration/${integrationId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -97,7 +97,7 @@ const CardMappingsPage = () => {
   const fetchTrelloCardsDirectly = async (boardId: string) => {
     try {
       // Usar el mismo endpoint que funciona en DebugPage.tsx
-      const response = await fetch(`http://localhost:5000/api/debug/trello/board/${boardId}/cards`);
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/board/${boardId}/cards`);
       
       if (!response.ok) {
         throw new Error('Error al obtener tarjetas del tablero de Trello');
@@ -126,7 +126,7 @@ const CardMappingsPage = () => {
   const fetchDiscordChannels = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/card-channel/integration/${integrationId}/channels`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/integration/${integrationId}/channels`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -146,7 +146,7 @@ const CardMappingsPage = () => {
   const fetchMappings = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/card-channel/integration/${integrationId}/mapping`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/integration/${integrationId}/mapping`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -198,7 +198,7 @@ const CardMappingsPage = () => {
     setConfirmOpen(false);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/card-channel/mapping/${pendingDeleteId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/mapping/${pendingDeleteId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -270,7 +270,7 @@ const CardMappingsPage = () => {
       console.log('Creando mapeo directo:', mappingData);
       
       // Intentar crear el mapeo directamente en la base de datos
-      const response = await fetch(`http://localhost:5000/api/card-channel/create-direct`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/create-direct`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

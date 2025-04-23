@@ -65,7 +65,7 @@ const UserMappingsPage = () => {
         throw new Error('Falta token o ID de integración');
       }
       
-      const response = await fetch(`http://localhost:5000/api/integration/${integrationId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/integration/${integrationId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -96,7 +96,7 @@ const UserMappingsPage = () => {
   const fetchTrelloUsers = async (boardId: string) => {
     try {
       // Usar la misma ruta que funciona en DebugPage.tsx
-      const response = await fetch(`http://localhost:5000/api/debug/trello/board/${boardId}/details`);
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/board/${boardId}/details`);
       
       if (!response.ok) {
         throw new Error('Error al obtener detalles del tablero de Trello');
@@ -124,7 +124,7 @@ const UserMappingsPage = () => {
   const fetchDiscordUsers = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/user-mapping/integration/${integrationId}/users/discord`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/user-mapping/integration/${integrationId}/users/discord`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -144,7 +144,7 @@ const UserMappingsPage = () => {
   const fetchMappings = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/user-mapping/integration/${integrationId}/mapping`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/user-mapping/integration/${integrationId}/mapping`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -176,7 +176,7 @@ const UserMappingsPage = () => {
     setConfirmOpen(false);
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`http://localhost:5000/api/user-mapping/mapping/${pendingDeleteId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/user-mapping/mapping/${pendingDeleteId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -237,7 +237,7 @@ const UserMappingsPage = () => {
       console.log('Creando mapeo directo:', mappingData);
       
       // Intentar crear el mapeo directamente en la base de datos
-      const response = await fetch(`http://localhost:5000/api/user-mapping/create-direct`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/user-mapping/create-direct`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
