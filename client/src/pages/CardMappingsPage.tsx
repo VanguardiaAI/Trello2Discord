@@ -2,22 +2,20 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 
-interface TrelloCard {
+type TrelloList = {
   id: string;
   name: string;
-  url: string;
-  members: string[];
-}
+};
 
 interface DiscordChannel {
   id: string;
   name: string;
 }
 
-interface CardChannelMapping {
+interface ListChannelMapping {
   _id: string;
-  trello_card_id: string;
-  trello_card_name: string;
+  trello_list_id: string;
+  trello_list_name: string;
   discord_channel_id: string;
   discord_channel_name: string;
   integration_id: string;
@@ -29,11 +27,11 @@ const CardMappingsPage = () => {
   const { integrationId } = useParams<{ integrationId: string }>();
   const navigate = useNavigate();
   
-  const [trelloCards, setTrelloCards] = useState<TrelloCard[]>([]);
+  const [trelloLists, setTrelloLists] = useState<TrelloList[]>([]);
   const [discordChannels, setDiscordChannels] = useState<DiscordChannel[]>([]);
-  const [mappings, setMappings] = useState<CardChannelMapping[]>([]);
+  const [mappings, setMappings] = useState<ListChannelMapping[]>([]);
   
-  const [selectedTrelloCard, setSelectedTrelloCard] = useState('');
+  const [selectedTrelloList, setSelectedTrelloList] = useState('');
   const [selectedDiscordChannel, setSelectedDiscordChannel] = useState('');
   
   const [isCreating, setIsCreating] = useState(false);
@@ -78,9 +76,9 @@ const CardMappingsPage = () => {
       
       const data = await response.json();
       if (data.integration && data.integration.trello_board_id) {
-        // Una vez que tenemos el ID del tablero, podemos obtener las tarjetas y otros datos
+        // Una vez que tenemos el ID del tablero, podemos obtener las listas y otros datos
         await Promise.all([
-          fetchTrelloCardsDirectly(data.integration.trello_board_id),
+          fetchTrelloListsDirectly(),
           fetchDiscordChannels(),
           fetchMappings()
         ]);
@@ -94,29 +92,22 @@ const CardMappingsPage = () => {
     }
   };
   
-  const fetchTrelloCardsDirectly = async (boardId: string) => {
+  const fetchTrelloListsDirectly = async () => {
     try {
-      // Usar el mismo endpoint que funciona en DebugPage.tsx
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/debug/trello/board/${boardId}/cards`);
-      
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/integration/${integrationId}/lists`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       if (!response.ok) {
-        throw new Error('Error al obtener tarjetas del tablero de Trello');
+        throw new Error('Error al obtener listas del tablero de Trello');
       }
-      
       const data = await response.json();
-      
-      if (data.status === 'success' && data.cards) {
-        // Transformar las tarjetas al formato esperado por el componente
-        const formattedCards: TrelloCard[] = data.cards.map((card: any) => ({
-          id: card.id,
-          name: card.name,
-          url: card.url,
-          members: card.members || []
-        }));
-        
-        setTrelloCards(formattedCards);
+      if (data.trello_lists) {
+        setTrelloLists(data.trello_lists);
       } else {
-        throw new Error(data.message || 'No se pudieron obtener las tarjetas del tablero');
+        throw new Error(data.message || 'No se pudieron obtener las listas del tablero');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
@@ -153,7 +144,7 @@ const CardMappingsPage = () => {
       });
       
       if (!response.ok) {
-        throw new Error('Error al obtener mapeos de tarjetas-canales');
+        throw new Error('Error al obtener mapeos de listas-canales');
       }
       
       const data = await response.json();
@@ -218,19 +209,19 @@ const CardMappingsPage = () => {
     }
   };
   
-  // Filtrar tarjetas y canales que ya están mapeados
-  const unmappedTrelloCards = trelloCards.filter(
-    card => !mappings.some(mapping => mapping.trello_card_id === card.id)
+  // Filtrar listas y canales que ya están mapeados
+  const unmappedTrelloLists = trelloLists.filter(
+    list => !mappings.some(mapping => mapping.trello_list_id === list.id)
   );
   
   const unmappedDiscordChannels = discordChannels.filter(
     channel => !mappings.some(mapping => mapping.discord_channel_id === channel.id)
   );
   
-  // Función para crear mapeo de tarjeta-canal directamente
+  // Función para crear mapeo de lista-canal directamente
   const handleCreateMappingDirectly = async () => {
-    if (!selectedTrelloCard || !selectedDiscordChannel) {
-      setError('Debes seleccionar una tarjeta de Trello y un canal de Discord');
+    if (!selectedTrelloList || !selectedDiscordChannel) {
+      setError('Debes seleccionar una lista de Trello y un canal de Discord');
       return;
     }
     
@@ -245,10 +236,10 @@ const CardMappingsPage = () => {
         return;
       }
       
-      // Obtener información de la tarjeta de Trello seleccionada
-      const trelloCard = trelloCards.find(card => card.id === selectedTrelloCard);
-      if (!trelloCard) {
-        throw new Error('Tarjeta de Trello seleccionada no encontrada');
+      // Obtener información de la lista de Trello seleccionada
+      const trelloList = trelloLists.find(list => list.id === selectedTrelloList);
+      if (!trelloList) {
+        throw new Error('Lista de Trello seleccionada no encontrada');
       }
       
       // Obtener información del canal de Discord seleccionado
@@ -259,8 +250,8 @@ const CardMappingsPage = () => {
       
       // Crear objeto de mapeo directamente
       const mappingData = {
-        trello_card_id: trelloCard.id,
-        trello_card_name: trelloCard.name,
+        trello_list_id: trelloList.id,
+        trello_list_name: trelloList.name,
         discord_channel_id: discordChannel.id,
         discord_channel_name: discordChannel.name,
         integration_id: integrationId,
@@ -270,7 +261,7 @@ const CardMappingsPage = () => {
       console.log('Creando mapeo directo:', mappingData);
       
       // Intentar crear el mapeo directamente en la base de datos
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/create-direct`, {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/card-channel/integration/${integrationId}/mapping`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -310,7 +301,7 @@ const CardMappingsPage = () => {
         fetchMappings();
         
         // Limpiar el formulario
-        setSelectedTrelloCard('');
+        setSelectedTrelloList('');
         setSelectedDiscordChannel('');
         
         // Limpiar mensaje de éxito después de 3 segundos
@@ -323,11 +314,11 @@ const CardMappingsPage = () => {
       }
       
       // Limpiar el formulario
-      setSelectedTrelloCard('');
+      setSelectedTrelloList('');
       setSelectedDiscordChannel('');
       
       // Mostrar mensaje de éxito
-      setSuccess(responseData.message || 'Mapeo de tarjeta-canal creado exitosamente');
+      setSuccess(responseData.message || 'Mapeo de lista-canal creado exitosamente');
       
       // Actualizar la lista de mapeos
       fetchMappings();
@@ -342,7 +333,7 @@ const CardMappingsPage = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Mapeos de Tarjetas y Canales</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Mapeos de Listas y Canales</h1>
         <button 
           onClick={() => navigate('/')}
           className="btn btn-secondary"
@@ -407,22 +398,22 @@ const CardMappingsPage = () => {
             }}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div>
-                  <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="trelloCard">
-                    Tarjeta de Trello
+                  <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="trelloList">
+                    Lista de Trello
                   </label>
-                  {unmappedTrelloCards.length === 0 ? (
-                    <p className="text-yellow-600">No hay tarjetas disponibles para mapear.</p>
+                  {unmappedTrelloLists.length === 0 ? (
+                    <p className="text-yellow-600">No hay listas disponibles para mapear.</p>
                   ) : (
                     <select
-                      id="trelloCard"
+                      id="trelloList"
                       className="form-select w-full"
-                      value={selectedTrelloCard}
-                      onChange={(e) => setSelectedTrelloCard(e.target.value)}
+                      value={selectedTrelloList}
+                      onChange={(e) => setSelectedTrelloList(e.target.value)}
                     >
-                      <option value="">Selecciona una tarjeta</option>
-                      {unmappedTrelloCards.map((card) => (
-                        <option key={card.id} value={card.id}>
-                          {card.name}
+                      <option value="">Selecciona una lista</option>
+                      {unmappedTrelloLists.map((list) => (
+                        <option key={list.id} value={list.id}>
+                          {list.name}
                         </option>
                       ))}
                     </select>
@@ -455,9 +446,9 @@ const CardMappingsPage = () => {
               
               <button
                 type="submit"
-                disabled={isCreating || unmappedTrelloCards.length === 0 || unmappedDiscordChannels.length === 0}
+                disabled={isCreating || unmappedTrelloLists.length === 0 || unmappedDiscordChannels.length === 0}
                 className={`${
-                  isCreating || unmappedTrelloCards.length === 0 || unmappedDiscordChannels.length === 0
+                  isCreating || unmappedTrelloLists.length === 0 || unmappedDiscordChannels.length === 0
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'btn btn-primary'
                 } text-white font-medium py-2 px-4 rounded`}
@@ -473,12 +464,12 @@ const CardMappingsPage = () => {
                 ) : 'Crear Mapeo'}
               </button>
               
-              {(unmappedTrelloCards.length === 0 || unmappedDiscordChannels.length === 0) && (
+              {(unmappedTrelloLists.length === 0 || unmappedDiscordChannels.length === 0) && (
                 <p className="text-yellow-600 mt-2 text-sm">
-                  {unmappedTrelloCards.length === 0 && unmappedDiscordChannels.length === 0
-                    ? 'No hay tarjetas ni canales disponibles para mapear.'
-                    : unmappedTrelloCards.length === 0
-                    ? 'No hay tarjetas de Trello disponibles para mapear.'
+                  {unmappedTrelloLists.length === 0 && unmappedDiscordChannels.length === 0
+                    ? 'No hay listas ni canales disponibles para mapear.'
+                    : unmappedTrelloLists.length === 0
+                    ? 'No hay listas de Trello disponibles para mapear.'
                     : 'No hay canales de Discord disponibles para mapear.'}
                 </p>
               )}
@@ -494,7 +485,7 @@ const CardMappingsPage = () => {
                 <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path>
                 </svg>
-                <p className="mt-2 text-gray-600">No hay mapeos de tarjetas-canales configurados.</p>
+                <p className="mt-2 text-gray-600">No hay mapeos de listas-canales configurados.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -502,7 +493,7 @@ const CardMappingsPage = () => {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="py-3 px-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Tarjeta de Trello
+                        Lista de Trello
                       </th>
                       <th className="py-3 px-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                         Canal de Discord
@@ -522,7 +513,7 @@ const CardMappingsPage = () => {
                     {mappings.map((mapping) => (
                       <tr key={mapping._id} className="hover:bg-gray-50 transition-colors duration-150">
                         <td className="py-4 px-4">
-                          <div className="text-sm font-medium text-gray-900">{mapping.trello_card_name}</div>
+                          <div className="text-sm font-medium text-gray-900">{mapping.trello_list_name}</div>
                         </td>
                         <td className="py-4 px-4">
                           <div className="text-sm text-gray-900">#{mapping.discord_channel_name}</div>

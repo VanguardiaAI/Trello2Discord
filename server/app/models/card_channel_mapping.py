@@ -3,16 +3,15 @@ from bson import ObjectId
 
 class CardChannelMapping:
     """
-    Modelo para mapear tarjetas de Trello a canales de Discord
+    Modelo para mapear listas de Trello a canales de Discord
     """
     def __init__(self, **kwargs):
         self._id = kwargs.get('_id', None)
-        self.trello_card_id = kwargs.get('trello_card_id', '')
-        self.trello_card_name = kwargs.get('trello_card_name', '')
+        self.trello_list_id = kwargs.get('trello_list_id', '')
+        self.trello_list_name = kwargs.get('trello_list_name', '')
         self.discord_channel_id = kwargs.get('discord_channel_id', '')
         self.discord_channel_name = kwargs.get('discord_channel_name', '')
         self.integration_id = kwargs.get('integration_id', None)  # ID de la integración a la que pertenece
-        self.trello_member_id = kwargs.get('trello_member_id', None)  # ID del miembro de Trello asignado
         self.discord_message_id = kwargs.get('discord_message_id', None)  # ID del mensaje inicial en Discord
         self.created_at = kwargs.get('created_at', datetime.utcnow())
         self.updated_at = kwargs.get('updated_at', datetime.utcnow())
@@ -24,8 +23,8 @@ class CardChannelMapping:
         Convierte el objeto a un diccionario para almacenar en MongoDB
         """
         data = {
-            'trello_card_id': self.trello_card_id,
-            'trello_card_name': self.trello_card_name,
+            'trello_list_id': self.trello_list_id,
+            'trello_list_name': self.trello_list_name,
             'discord_channel_id': self.discord_channel_id,
             'discord_channel_name': self.discord_channel_name,
             'created_at': self.created_at,
@@ -62,9 +61,6 @@ class CardChannelMapping:
                 except:
                     # _id puede ser None para nuevos documentos
                     pass
-            
-        if self.trello_member_id:
-            data['trello_member_id'] = self.trello_member_id
             
         if self.discord_message_id:
             data['discord_message_id'] = self.discord_message_id

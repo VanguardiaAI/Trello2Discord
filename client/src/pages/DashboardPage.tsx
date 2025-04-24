@@ -53,15 +53,15 @@ const DashboardPage = () => {
       
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-semibold mb-4">Mapeos de Tarjetas</h2>
+          <h2 className="text-xl font-semibold mb-4">Mapeos de Listas</h2>
           <p className="text-gray-600 mb-4">
-            Vincula manualmente tarjetas de Trello con canales de Discord.
+            Vincula manualmente listas de Trello con canales de Discord.
           </p>
           <button 
             onClick={() => navigate('/card-mappings')}
             className="bg-purple-500 hover:bg-purple-600 text-white font-medium py-2 px-4 rounded"
           >
-            Gestionar Mapeos de Tarjetas
+            Gestionar Mapeos de Listas
           </button>
         </div>
         

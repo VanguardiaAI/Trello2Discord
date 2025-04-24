@@ -11,8 +11,6 @@ logger = logging.getLogger(__name__)
 
 # Token del bot de Discord
 DISCORD_TOKEN = os.environ.get('DISCORD_BOT_TOKEN')
-# ID del servidor de Discord (Guild ID)
-GUILD_ID = os.environ.get('DISCORD_GUILD_ID')
 
 # Cliente de Discord
 intents = discord.Intents.all()
@@ -21,7 +19,6 @@ bot.remove_command('help')  # Quitar comando de ayuda por defecto
 
 # Variable para rastrear si el bot está inicializado
 bot_initialized = False
-bot_guild = None
 
 # Diccionario para almacenar información sobre interacciones de botones
 button_callbacks = {}
@@ -30,7 +27,7 @@ def init_discord_bot():
     """
     Inicializa el bot de Discord si no está ya inicializado
     """
-    global bot_initialized, bot_guild
+    global bot_initialized
     
     if bot_initialized:
         return True
@@ -56,21 +53,8 @@ def init_discord_bot():
         @bot.event
         async def on_ready():
             """Evento que se ejecuta cuando el bot está listo"""
-            global bot_guild
             logger.info(f"Bot conectado como {bot.user.name}")
-            
-            # Obtener el servidor específico si se proporciona un ID
-            if GUILD_ID:
-                bot_guild = bot.get_guild(int(GUILD_ID))
-                if bot_guild:
-                    logger.info(f"Bot conectado al servidor: {bot_guild.name}")
-                else:
-                    logger.error(f"No se pudo encontrar el servidor con ID: {GUILD_ID}")
-            
-            # Si no hay un GUILD_ID específico, usar el primer servidor disponible
-            if not bot_guild and bot.guilds:
-                bot_guild = bot.guilds[0]
-                logger.info(f"Bot conectado al primer servidor disponible: {bot_guild.name}")
+            logger.info(f"Bot está en los siguientes servidores: {[g.name for g in bot.guilds]}")
         
         @bot.event
         async def on_interaction(interaction: Interaction):
@@ -138,45 +122,40 @@ def init_discord_bot():
         logger.error(f"Error al inicializar el bot de Discord: {e}")
         return False
 
-async def _create_discord_channel_async(channel_name):
+async def _create_discord_channel_async(channel_name, guild_id):
     """
     Crea un nuevo canal de texto en Discord (versión asíncrona)
     """
-    global bot_guild
-    
+    logger = logging.getLogger("app.discord.bot")
+    logger.info(f"[DEPURACIÓN] Intentando crear canal: '{channel_name}' en guild: {guild_id}")
     if not bot_initialized:
         if not init_discord_bot():
             logger.error("No se pudo inicializar el bot de Discord")
             return None
-    
-    # Esperar a que el bot esté listo y tengamos acceso al guild
     import asyncio
     count = 0
-    while not bot_guild and count < 30:  # Esperar hasta 30 segundos
-        await asyncio.sleep(1)
-        count += 1
-    
-    if not bot_guild:
-        logger.error("No se pudo obtener el servidor de Discord")
+    guild = None
+    while not guild and count < 30:
+        guild = bot.get_guild(int(guild_id))
+        if not guild:
+            await asyncio.sleep(1)
+            count += 1
+    if not guild:
+        logger.error(f"No se pudo obtener el servidor de Discord con ID {guild_id}")
         return None
-    
     try:
-        # Crear canal de texto en la categoría por defecto
-        # Puedes cambiar esto para crear el canal en una categoría específica
-        channel = await bot_guild.create_text_channel(channel_name)
+        logger.info(f"[DEPURACIÓN] Llamando a create_text_channel con nombre: '{channel_name}' en guild: {guild_id}")
+        channel = await guild.create_text_channel(channel_name)
+        logger.info(f"[DEPURACIÓN] Resultado de create_text_channel: {channel} (ID: {getattr(channel, 'id', None)})")
         logger.info(f"Canal de Discord creado: {channel.name} (ID: {channel.id})")
         return channel.id
-    except discord.Forbidden:
-        logger.error("No tengo permisos para crear canales en Discord")
-        return None
-    except discord.HTTPException as e:
-        logger.error(f"Error HTTP al crear canal en Discord: {e}")
-        return None
     except Exception as e:
         logger.error(f"Error al crear canal en Discord: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
 
-def create_discord_channel(channel_name):
+def create_discord_channel(channel_name, guild_id):
     """
     Función no asíncrona para crear un canal en Discord
     Esta función se puede llamar desde el código sincrónico
@@ -188,7 +167,7 @@ def create_discord_channel(channel_name):
     
     # Planificar la creación del canal en el bucle de eventos de asyncio del bot
     import asyncio
-    future = asyncio.run_coroutine_threadsafe(_create_discord_channel_async(channel_name), bot.loop)
+    future = asyncio.run_coroutine_threadsafe(_create_discord_channel_async(channel_name, guild_id), bot.loop)
     
     try:
         # Esperar el resultado con un timeout

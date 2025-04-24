@@ -5,41 +5,46 @@ from app.routes.integration import token_required, get_trello_service, get_disco
 
 card_channel_bp = Blueprint('card_channel', __name__)
 
-@card_channel_bp.route('/integration/<integration_id>/cards', methods=['GET'])
+@card_channel_bp.route('/integration/<integration_id>/lists', methods=['GET'])
 @token_required
-def get_trello_cards(current_user_id, integration_id):
+def get_trello_lists(current_user_id, integration_id):
     """
-    Obtiene las tarjetas de Trello para una integración
+    Obtiene las listas de Trello para una integración
     """
     try:
+        import os
+        import requests
         db = current_app.config['MONGO_DB']
-        
-        # Verificar que la integración exista y pertenezca al usuario
         integration = db.integrations.find_one({
             '_id': ObjectId(integration_id),
             'created_by': ObjectId(current_user_id)
         })
-        
         if not integration:
             return jsonify({'message': 'Integración no encontrada'}), 404
-        
-        # Obtener tarjetas de Trello
-        trello_cards = get_trello_service().get_cards(integration['trello_board_id'])
-        
-        # Formatear tarjetas
-        formatted_cards = []
-        for card in trello_cards:
-            formatted_cards.append({
-                'id': card.id,
-                'name': card.name,
-                'url': card.url,
-                'members': [member_id for member_id in card.member_ids]
+        trello_board_id = integration['trello_board_id']
+        api_key = os.environ.get('TRELLO_API_KEY')
+        token = os.environ.get('TRELLO_TOKEN')
+        url = f"https://api.trello.com/1/boards/{trello_board_id}/lists"
+        params = {
+            'key': api_key,
+            'token': token,
+            'fields': 'id,name,closed'
+        }
+        response = requests.get(url, params=params)
+        if response.status_code != 200:
+            current_app.logger.error(f"Error al obtener listas de Trello: {response.text}")
+            return jsonify({'message': f'Error al obtener listas de Trello: {response.text}'}), 500
+        lists_data = response.json()
+        formatted_lists = []
+        for lst in lists_data:
+            formatted_lists.append({
+                'id': lst.get('id'),
+                'name': lst.get('name')
             })
-        
-        return jsonify({'trello_cards': formatted_cards}), 200
+        return jsonify({'trello_lists': formatted_lists}), 200
     except Exception as e:
-        current_app.logger.error(f"Error al obtener tarjetas de Trello: {e}")
-        return jsonify({'message': f'Error al obtener tarjetas de Trello: {str(e)}'}), 500
+        current_app.logger.error(f"Error al obtener listas de Trello: {e}")
+        return jsonify({'message': f'Error al obtener listas de Trello: {str(e)}'}), 500
 
 @card_channel_bp.route('/integration/<integration_id>/channels', methods=['GET'])
 @token_required
@@ -69,189 +74,153 @@ def get_discord_channels(current_user_id, integration_id):
 
 @card_channel_bp.route('/integration/<integration_id>/mapping', methods=['POST'])
 @token_required
-def create_card_channel_mapping(current_user_id, integration_id):
+def create_list_channel_mapping(current_user_id, integration_id):
     """
-    Crea un mapeo manual entre una tarjeta de Trello y un canal de Discord
+    Crea un mapeo manual entre una lista de Trello y un canal de Discord
     """
     try:
+        import os
+        import requests
         data = request.json
-        
-        # Validar datos
-        if not data or 'trello_card_id' not in data or 'discord_channel_id' not in data:
+        if not data or 'trello_list_id' not in data or 'discord_channel_id' not in data:
             return jsonify({'message': 'Datos incompletos'}), 400
-        
         db = current_app.config['MONGO_DB']
-        
-        # Verificar que la integración exista y pertenezca al usuario
         integration = db.integrations.find_one({
             '_id': ObjectId(integration_id),
             'created_by': ObjectId(current_user_id)
         })
-        
         if not integration:
             return jsonify({'message': 'Integración no encontrada'}), 404
-        
-        # Verificar si ya existe un mapeo para esta tarjeta en esta integración
         existing_mapping = db.card_channel_mappings.find_one({
-            'trello_card_id': data['trello_card_id'],
+            'trello_list_id': data['trello_list_id'],
             'integration_id': ObjectId(integration_id)
         })
-        
         if existing_mapping:
-            return jsonify({'message': 'Ya existe un mapeo para esta tarjeta'}), 400
-        
-        # Verificar si ya existe un mapeo para este canal en esta integración
+            return jsonify({'message': 'Ya existe un mapeo para esta lista'}), 400
         existing_channel_mapping = db.card_channel_mappings.find_one({
             'discord_channel_id': data['discord_channel_id'],
             'integration_id': ObjectId(integration_id)
         })
-        
         if existing_channel_mapping:
             return jsonify({'message': 'Ya existe un mapeo para este canal'}), 400
-        
-        # Obtener información de la tarjeta y el canal
-        card_details = get_trello_service().get_card(data['trello_card_id'])
-        
-        if not card_details:
-            return jsonify({'message': 'Tarjeta de Trello no encontrada'}), 404
-        
-        # Obtener canales de Discord para verificar que el canal existe
+        # Obtener información de la lista desde la API de Trello
+        trello_board_id = integration['trello_board_id']
+        api_key = os.environ.get('TRELLO_API_KEY')
+        token = os.environ.get('TRELLO_TOKEN')
+        url = f"https://api.trello.com/1/boards/{trello_board_id}/lists"
+        params = {
+            'key': api_key,
+            'token': token,
+            'fields': 'id,name,closed'
+        }
+        response = requests.get(url, params=params)
+        if response.status_code != 200:
+            current_app.logger.error(f"Error al obtener listas de Trello: {response.text}")
+            return jsonify({'message': f'Error al obtener listas de Trello: {response.text}'}), 500
+        lists_data = response.json()
+        current_app.logger.info(f"ID de lista recibido: {data['trello_list_id']}")
+        current_app.logger.info(f"IDs de listas obtenidas: {[l.get('id') for l in lists_data]}")
+        list_obj = next((l for l in lists_data if l.get('id') == data['trello_list_id']), None)
+        if not list_obj:
+            current_app.logger.error(f"No se encontró la lista con ID {data['trello_list_id']} en las listas del tablero {trello_board_id}")
+            return jsonify({'message': 'Lista de Trello no encontrada'}), 404
         discord_channels = get_discord_service().get_channels_sync(integration['discord_server_id'])
         channel = next((c for c in discord_channels if c['id'] == data['discord_channel_id']), None)
-        
         if not channel:
             return jsonify({'message': 'Canal de Discord no encontrado en el servidor'}), 404
-        
-        # Crear mapeo
-        card_channel_mapping = CardChannelMapping(
-            trello_card_id=data['trello_card_id'],
-            trello_card_name=card_details['name'],
+        list_channel_mapping = CardChannelMapping(
+            trello_list_id=data['trello_list_id'],
+            trello_list_name=list_obj.get('name'),
             discord_channel_id=data['discord_channel_id'],
             discord_channel_name=channel['name'],
             integration_id=ObjectId(integration_id),
             created_by=ObjectId(current_user_id),
             created_automatically=False
         )
-        
-        # Guardar en base de datos
-        mapping_id = db.card_channel_mappings.insert_one(card_channel_mapping.to_dict()).inserted_id
-        
-        # Verificar que se generó un ID válido
+        mapping_id = db.card_channel_mappings.insert_one(list_channel_mapping.to_dict()).inserted_id
         if not mapping_id or not ObjectId.is_valid(mapping_id):
             current_app.logger.error(f"Error al crear mapeo: ID generado inválido: {mapping_id}")
             return jsonify({'message': 'Error al crear el mapeo: ID generado inválido'}), 500
-            
         current_app.logger.info(f"Mapeo creado exitosamente: {mapping_id}")
-        
-        # Enviar mensaje al canal con información de la tarjeta
-        message_content = f"**Tarjeta de Trello vinculada manualmente: {card_details['name']}**\n\n"
-        if 'desc' in card_details and card_details['desc']:
-            message_content += f"Descripción: {card_details['desc']}\n\n"
-        message_content += f"Enlace: {card_details['url']}"
-        
+        message_content = f"**Lista de Trello vinculada manualmente: {list_obj.get('name')}**\n\n"
         message = get_discord_service().send_message_sync(
             data['discord_channel_id'],
             message_content
         )
-        
-        # Actualizar el mapeo con el ID del mensaje
         if message:
             db.card_channel_mappings.update_one(
                 {'_id': ObjectId(mapping_id)},
                 {'$set': {'discord_message_id': message['id']}}
             )
-        
         return jsonify({
-            'message': 'Mapeo de tarjeta-canal creado exitosamente',
+            'message': 'Mapeo de lista-canal creado exitosamente',
             'mapping_id': str(mapping_id)
         }), 201
     except Exception as e:
-        current_app.logger.error(f"Error al crear mapeo de tarjeta-canal: {e}")
-        return jsonify({'message': f'Error al crear mapeo de tarjeta-canal: {str(e)}'}), 500
+        current_app.logger.error(f"Error al crear mapeo de lista-canal: {e}")
+        return jsonify({'message': f'Error al crear mapeo de lista-canal: {str(e)}'}), 500
 
 @card_channel_bp.route('/integration/<integration_id>/mapping', methods=['GET'])
 @token_required
-def get_card_channel_mappings(current_user_id, integration_id):
+def get_list_channel_mappings(current_user_id, integration_id):
     """
-    Obtiene todos los mapeos de tarjetas-canales para una integración
+    Obtiene todos los mapeos de listas-canales para una integración
     """
     try:
         db = current_app.config['MONGO_DB']
-        
-        # Verificar que la integración exista y pertenezca al usuario
         integration = db.integrations.find_one({
             '_id': ObjectId(integration_id),
             'created_by': ObjectId(current_user_id)
         })
-        
         if not integration:
             return jsonify({'message': 'Integración no encontrada'}), 404
-        
-        # Obtener mapeos
         mappings = list(db.card_channel_mappings.find({'integration_id': ObjectId(integration_id)}))
-        
-        # Convertir ObjectId a string
         for mapping in mappings:
             mapping['_id'] = str(mapping['_id'])
             mapping['integration_id'] = str(mapping['integration_id'])
             if 'created_by' in mapping and mapping['created_by']:
                 mapping['created_by'] = str(mapping['created_by'])
-        
         return jsonify({'mappings': mappings}), 200
     except Exception as e:
-        current_app.logger.error(f"Error al obtener mapeos de tarjetas-canales: {e}")
-        return jsonify({'message': f'Error al obtener mapeos de tarjetas-canales: {str(e)}'}), 500
+        current_app.logger.error(f"Error al obtener mapeos de listas-canales: {e}")
+        return jsonify({'message': f'Error al obtener mapeos de listas-canales: {str(e)}'}), 500
 
 @card_channel_bp.route('/mapping/<mapping_id>', methods=['DELETE'])
 @token_required
-def delete_card_channel_mapping(current_user_id, mapping_id):
+def delete_list_channel_mapping(current_user_id, mapping_id):
     """
-    Elimina un mapeo de tarjeta-canal por su ID
+    Elimina un mapeo de lista-canal por su ID
     """
     try:
-        # Verificar que el ID sea válido
         if not mapping_id or mapping_id == 'None' or mapping_id == 'undefined' or mapping_id == 'null' or mapping_id.strip() == '':
             current_app.logger.warning(f"Intento de eliminar mapeo con ID inválido: {mapping_id}")
             return jsonify({'message': 'ID de mapeo no válido'}), 400
-            
         try:
-            # Intentar convertir a ObjectId para verificar si tiene el formato correcto
             mapping_object_id = ObjectId(mapping_id)
         except Exception as e:
             current_app.logger.warning(f"Error al convertir ID de mapeo a ObjectId: {mapping_id}, Error: {e}")
             return jsonify({'message': f'ID de mapeo con formato inválido: {mapping_id}'}), 400
-            
         db = current_app.config['MONGO_DB']
-        
-        # Obtener mapeo
         mapping = db.card_channel_mappings.find_one({'_id': mapping_object_id})
-        
         if not mapping:
             current_app.logger.warning(f"Mapeo no encontrado con ID: {mapping_id}")
             return jsonify({'message': 'Mapeo no encontrado'}), 404
-        
-        # Verificar que la integración pertenezca al usuario
         integration = db.integrations.find_one({
             '_id': mapping['integration_id'],
             'created_by': ObjectId(current_user_id)
         })
-        
         if not integration:
             current_app.logger.warning(f"Usuario {current_user_id} no autorizado para eliminar el mapeo {mapping_id}")
             return jsonify({'message': 'No autorizado para eliminar este mapeo'}), 403
-        
-        # Eliminar mapeo
         delete_result = db.card_channel_mappings.delete_one({'_id': mapping_object_id})
-        
         if delete_result.deleted_count == 0:
             current_app.logger.error(f"Error al eliminar mapeo: no se eliminó ningún documento con ID {mapping_id}")
             return jsonify({'message': 'No se pudo eliminar el mapeo'}), 500
-            
         current_app.logger.info(f"Mapeo {mapping_id} eliminado exitosamente por el usuario {current_user_id}")
         return jsonify({'message': 'Mapeo eliminado exitosamente'}), 200
     except Exception as e:
-        current_app.logger.error(f"Error al eliminar mapeo de tarjeta-canal: {e}")
-        return jsonify({'message': f'Error al eliminar mapeo de tarjeta-canal: {str(e)}'}), 500
+        current_app.logger.error(f"Error al eliminar mapeo de lista-canal: {e}")
+        return jsonify({'message': f'Error al eliminar mapeo de lista-canal: {str(e)}'}), 500
 
 @card_channel_bp.route('/create-direct', methods=['POST'])
 @token_required

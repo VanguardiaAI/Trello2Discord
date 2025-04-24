@@ -51,7 +51,7 @@ export function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showRegister, setShowRegister] = useState(false);
-
+  console.log('VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
   const handleLogin = async (email: string, password: string) => {
     try {
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {

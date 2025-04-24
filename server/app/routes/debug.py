@@ -9,6 +9,8 @@ import json
 from app.discord.bot import send_message_to_channel, create_discord_channel, send_message_with_button
 from app.models.user_mapping import UserMapping
 from app.models.card_channel_mapping import CardChannelMapping
+import re
+from app.services.discord_service import DiscordService
 
 debug_bp = Blueprint('debug', __name__)
 
@@ -18,6 +20,9 @@ previous_cards_state = {}
 polling_active = False
 # ID del tablero de Trello que estamos monitoreando
 monitored_board_id = None
+
+# Estado global para listas y tarjetas
+previous_lists_state = {}
 
 def get_trello_cards(board_id):
     """
@@ -158,140 +163,147 @@ def save_card_channel_mapping(trello_card_id, discord_channel_id):
         current_app.logger.error(f"Error al guardar mapeo de tarjeta-canal: {e}")
         return False
 
+def get_trello_lists(board_id):
+    """
+    Obtiene todas las listas de un tablero específico de Trello.
+    """
+    try:
+        api_key = os.environ.get('TRELLO_API_KEY')
+        token = os.environ.get('TRELLO_TOKEN')
+        if not api_key or not token:
+            current_app.logger.error("Credenciales de Trello no configuradas")
+            return None
+        lists_url = f"https://api.trello.com/1/boards/{board_id}/lists"
+        headers = {"Accept": "application/json"}
+        query = {
+            'key': api_key,
+            'token': token,
+            'fields': 'id,name,closed'
+        }
+        response = requests.get(lists_url, headers=headers, params=query)
+        if response.status_code != 200:
+            current_app.logger.error(f"Error al obtener listas: HTTP {response.status_code}")
+            return None
+        return response.json()
+    except Exception as e:
+        current_app.logger.error(f"Error en get_trello_lists: {e}")
+        return None
+
+def get_discord_channel_id_by_list(trello_list_id):
+    """
+    Obtiene el ID del canal de Discord mapeado a una lista de Trello
+    """
+    try:
+        db = current_app.config['MONGO_DB']
+        mapping = db.card_channel_mappings.find_one({'trello_list_id': trello_list_id})
+        if mapping and 'discord_channel_id' in mapping:
+            return mapping['discord_channel_id']
+        return None
+    except Exception as e:
+        current_app.logger.error(f"Error al obtener mapeo de lista-canal: {e}")
+        return None
+
+def save_list_channel_mapping(trello_list_id, trello_list_name, discord_channel_id):
+    try:
+        db = current_app.config['MONGO_DB']
+        mapping_data = {
+            'trello_list_id': trello_list_id,
+            'trello_list_name': trello_list_name,
+            'discord_channel_id': str(discord_channel_id),
+            'created_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow(),
+            'created_automatically': True
+        }
+        existing_mapping = db.card_channel_mappings.find_one({'trello_list_id': trello_list_id})
+        if existing_mapping:
+            db.card_channel_mappings.update_one(
+                {'_id': existing_mapping['_id']},
+                {'$set': {
+                    'discord_channel_id': str(discord_channel_id),
+                    'updated_at': datetime.utcnow()
+                }}
+            )
+            current_app.logger.info(f"Mapeo actualizado: Lista {trello_list_id} -> Canal {discord_channel_id}")
+        else:
+            db.card_channel_mappings.insert_one(mapping_data)
+            current_app.logger.info(f"Nuevo mapeo creado: Lista {trello_list_id} -> Canal {discord_channel_id}")
+        return True
+    except Exception as e:
+        current_app.logger.error(f"Error al guardar mapeo de lista-canal: {e}")
+        return False
+
 def detect_and_process_trello_changes():
     """
-    Función principal que detecta cambios en las tarjetas de Trello y realiza las acciones correspondientes
+    Detecta cambios en listas y tarjetas de Trello y realiza las acciones correspondientes.
     """
-    global previous_cards_state, polling_active, monitored_board_id
-    
-    # Importar acá para evitar errores de contexto
+    global previous_lists_state, previous_cards_state, polling_active, monitored_board_id
     from flask import current_app
-    
     if not monitored_board_id:
         print("No hay tablero configurado para monitorear")
         return
-    
     try:
         print(f"Verificando cambios en el tablero {monitored_board_id}")
-        # Obtener el estado actual de las tarjetas
+        # Obtener estado actual de listas y tarjetas
+        current_lists = get_trello_lists(monitored_board_id)
         current_cards = get_trello_cards(monitored_board_id)
-        
-        if not current_cards:
-            print("No se pudieron obtener las tarjetas actuales")
+        if not current_lists or not current_cards:
+            print("No se pudieron obtener listas o tarjetas actuales")
             return
-        
-        # Convertir la lista de tarjetas a un diccionario para facilitar la comparación
+        current_lists_dict = {lst['id']: lst for lst in current_lists if not lst.get('closed', False)}
         current_cards_dict = {card['id']: card for card in current_cards}
-        
-        # Si es la primera ejecución, solo almacenar el estado actual
-        if not previous_cards_state:
+        # --- PRIMERA EJECUCIÓN ---
+        if not previous_lists_state or not previous_cards_state:
+            previous_lists_state = current_lists_dict
             previous_cards_state = current_cards_dict
-            print("Primera ejecución, se almacena el estado inicial")
-            print(f"Número de tarjetas iniciales: {len(current_cards_dict)}")
+            print(f"Estado inicial almacenado: {len(current_lists_dict)} listas, {len(current_cards_dict)} tarjetas")
             return
-        
-        # Detectar tarjetas nuevas
+        # --- DETECTAR NUEVAS LISTAS ---
+        for list_id, lst in current_lists_dict.items():
+            if list_id not in previous_lists_state:
+                print(f"Nueva lista detectada: {lst['name']} (ID: {list_id})")
+                # Obtener integración para el board actual
+                db = current_app.config['MONGO_DB']
+                integration = db.integrations.find_one({'trello_board_id': monitored_board_id})
+                if not integration or 'discord_server_id' not in integration:
+                    print("No se encontró la integración o el discord_server_id para este board")
+                    continue
+                guild_id = integration['discord_server_id']
+                # Crear canal de Discord y mapear
+                channel_name = f"trello-{lst['name'].lower().replace(' ', '-')[:90]}"
+                safe_name = re.sub(r'[^a-zA-Z0-9_-]', '-', channel_name)
+                discord_channel_id = create_discord_channel(safe_name, guild_id)
+                if discord_channel_id:
+                    save_list_channel_mapping(list_id, lst['name'], discord_channel_id)
+                else:
+                    print(f"ERROR: No se pudo crear canal de Discord para la lista {list_id}")
+        # --- DETECTAR NUEVAS TARJETAS Y ACTUALIZACIONES ---
         for card_id, card in current_cards_dict.items():
             if card_id not in previous_cards_state:
                 print(f"Nueva tarjeta detectada: {card['name']} (ID: {card_id})")
-                process_new_card(card)
+                process_new_card_list_based(card)
             else:
-                # Verificar si la tarjeta ha sido actualizada
                 if card.get('dateLastActivity') != previous_cards_state[card_id].get('dateLastActivity'):
                     print(f"Tarjeta actualizada: {card['name']} (ID: {card_id})")
-                    process_updated_card(previous_cards_state[card_id], card)
-        
-        # Actualizar el estado anterior con el actual
+                    process_updated_card_list_based(previous_cards_state[card_id], card)
+        # Actualizar estado
+        previous_lists_state = current_lists_dict
         previous_cards_state = current_cards_dict
-        
     except Exception as e:
         print(f"Error en detect_and_process_trello_changes: {e}")
         import traceback
         print(traceback.format_exc())
 
-def process_new_card(card):
+def process_new_card_list_based(card):
     """
-    Procesa una nueva tarjeta de Trello:
-    1. Crea un canal en Discord
-    2. Mapea la tarjeta con el canal
-    3. Espera 2 minutos antes de enviar el mensaje inicial completo
+    Envía mensaje de asignación al canal de la lista correspondiente cuando se crea una nueva tarjeta y se asigna a un miembro.
     """
     try:
-        print(f"Procesando nueva tarjeta: {card['name']} (ID: {card['id']})")
-        channel_name = f"trello-{card['name'].lower().replace(' ', '-')[:90]}"
-        channel_name = ''.join(c for c in channel_name if c.isalnum() or c == '-')
-        print(f"Intentando crear canal de Discord con nombre: {channel_name}")
-        discord_channel_id = create_discord_channel(channel_name)
+        trello_list_id = card.get('idList')
+        discord_channel_id = get_discord_channel_id_by_list(trello_list_id)
         if not discord_channel_id:
-            print(f"ERROR: No se pudo crear el canal de Discord para la tarjeta {card['id']}")
+            print(f"No se encontró canal de Discord para la lista {trello_list_id}")
             return
-        print(f"Canal de Discord creado con ID: {discord_channel_id}")
-        save_result = save_card_channel_mapping(card['id'], discord_channel_id)
-        print(f"Resultado del guardado del mapeo: {save_result}")
-        # Esperar 2 minutos antes de enviar el mensaje completo
-        from threading import Timer
-        Timer(120, send_delayed_card_message, args=(card['id'],)).start()
-        print(f"Temporizador iniciado para enviar mensaje de la tarjeta {card['id']} en 2 minutos")
-    except Exception as e:
-        print(f"ERROR en process_new_card: {e}")
-        import traceback
-        print(traceback.format_exc())
-
-def send_delayed_card_message(card_id):
-    """
-    Obtiene los detalles actualizados de la tarjeta y envía el mensaje completo a Discord tras 1 minuto de espera.
-    """
-    try:
-        print(f"Enviando mensaje retrasado para la tarjeta {card_id}")
-        global monitored_board_id
-        if not monitored_board_id:
-            print("No hay tablero monitoreado para enviar mensaje retrasado")
-            return
-        cards = get_trello_cards(monitored_board_id)
-        card = next((c for c in cards if c['id'] == card_id), None)
-        if not card:
-            print(f"No se encontró la tarjeta {card_id} para enviar mensaje retrasado")
-            return
-        discord_channel_id = get_discord_channel_id(card_id)
-        if not discord_channel_id:
-            print(f"No se encontró canal de Discord para la tarjeta {card_id}")
-            return
-        # Construir mensaje mejorado y limpio
-        message = f"**Nueva tarjeta creada en Trello**\n"
-        message += f"📄 **Tarea:** {card['name']}\n"
-        if card.get('desc'):
-            message += f"📝 **Descripción:** {card.get('desc')}\n"
-        # Fecha de vencimiento
-        if card.get('due'):
-            message += f"📅 **Fecha límite:** {card['due']}\n"
-        # Etiquetas
-        if card.get('labels'):
-            etiquetas = ', '.join([label.get('name', '') for label in card['labels'] if label.get('name')])
-            if etiquetas:
-                message += f"🏷️ **Etiquetas:** {etiquetas}\n"
-        # Adjuntos
-        if card.get('attachments'):
-            adjuntos = card['attachments']
-            if adjuntos:
-                message += "📎 **Adjuntos:**\n"
-                for adj in adjuntos:
-                    message += f"- {adj.get('name', 'Archivo')}\n"
-        # Asignados
-        asignados = []
-        if 'idMembers' in card and card['idMembers']:
-            for member_id in card['idMembers']:
-                trello_member = get_trello_member_details(member_id)
-                discord_user_id = get_discord_user_id(member_id)
-                if discord_user_id:
-                    asignados.append(f"<@{discord_user_id}> ({trello_member.get('fullName', 'Desconocido')})")
-                else:
-                    asignados.append(f"{trello_member.get('fullName', 'Desconocido')} (no mapeado a Discord)")
-        if asignados:
-            message += f"🙋‍♂️ **Asignado a:** {', '.join(asignados)}\n"
-        # Enlace a la tarjeta
-        if card.get('shortUrl'):
-            message += f"\n📌 **Enlace a la tarjeta:** {card.get('shortUrl')}\n"
-        # Enviar mensaje con botón si hay asignados mapeados
+        # Si la tarjeta tiene asignados, enviar mensaje con botón de confirmación
         assigned_discord_users = [get_discord_user_id(mid) for mid in card.get('idMembers', []) if get_discord_user_id(mid)]
         if assigned_discord_users:
             for member_id in card['idMembers']:
@@ -303,9 +315,9 @@ def send_delayed_card_message(card_id):
                     if card.get('desc'):
                         confirmation_message += f"📝 **Descripción:** {card.get('desc')}\n"
                     if card.get('due'):
-                        confirmation_message += f"📅 **Fecha límite:** {card['due']}\n"
+                        confirmation_message += f"📅 **Fecha límite:** {card.get('due')}\n"
                     if card.get('labels'):
-                        etiquetas = ', '.join([label.get('name', '') for label in card['labels'] if label.get('name')])
+                        etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
                         if etiquetas:
                             confirmation_message += f"🏷️ **Etiquetas:** {etiquetas}\n"
                     if card.get('attachments'):
@@ -327,42 +339,53 @@ def send_delayed_card_message(card_id):
                         "confirm"
                     )
         else:
+            # Si no hay asignados, solo enviar mensaje informativo
+            message = f"**Nueva tarjeta creada en Trello**\n"
+            message += f"📄 **Tarea:** {card['name']}\n"
+            if card.get('desc'):
+                message += f"📝 **Descripción:** {card.get('desc')}\n"
+            if card.get('due'):
+                message += f"📅 **Fecha límite:** {card.get('due')}\n"
+            if card.get('labels'):
+                etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
+                if etiquetas:
+                    message += f"🏷️ **Etiquetas:** {etiquetas}\n"
+            if card.get('attachments'):
+                adjuntos = card['attachments']
+                if adjuntos:
+                    message += "📎 **Adjuntos:**\n"
+                    for adj in adjuntos:
+                        message += f"- {adj.get('name', 'Archivo')}\n"
+            if card.get('shortUrl'):
+                message += f"\n📌 **Enlace a la tarjeta:** {card.get('shortUrl')}\n"
             send_message_to_channel(discord_channel_id, message)
-        print(f"Mensaje retrasado enviado para la tarjeta {card_id}")
+        print(f"Mensaje de nueva tarjeta enviado al canal de la lista {trello_list_id}")
     except Exception as e:
-        print(f"ERROR en send_delayed_card_message: {e}")
+        print(f"ERROR en process_new_card_list_based: {e}")
         import traceback
         print(traceback.format_exc())
 
-def process_updated_card(old_card, new_card):
+def process_updated_card_list_based(old_card, new_card):
     """
-    Procesa una tarjeta actualizada de Trello:
-    1. Encuentra el canal de Discord mapeado
-    2. Envía un mensaje solo con los cambios detectados, de forma clara y concisa
-    3. Si hay nuevos asignados, los menciona y les envía botón de confirmación
+    Envía mensaje de actualización al canal de la lista correspondiente cuando una tarjeta es actualizada.
     """
     try:
-        print(f"Procesando actualización de tarjeta: {new_card['name']} (ID: {new_card['id']})")
-        discord_channel_id = get_discord_channel_id(new_card['id'])
+        trello_list_id = new_card.get('idList')
+        discord_channel_id = get_discord_channel_id_by_list(trello_list_id)
         if not discord_channel_id:
-            print(f"No hay canal mapeado para la tarjeta {new_card['id']}. No se puede enviar actualización.")
+            print(f"No se encontró canal de Discord para la lista {trello_list_id}")
             return
-        print(f"Canal de Discord mapeado encontrado: {discord_channel_id}")
         cambios = []
-        # Título
         if old_card.get('name', '') != new_card.get('name', ''):
             cambios.append(f"📄 *Título cambiado:* '{old_card.get('name', '')}' → '{new_card.get('name', '')}'")
-        # Descripción
         if old_card.get('desc', '') != new_card.get('desc', ''):
             nueva_desc = new_card.get('desc', '').strip()
             if nueva_desc:
                 cambios.append(f"⚠️ *Descripción actualizada:* {nueva_desc}")
             else:
                 cambios.append("⚠️ *Descripción eliminada*")
-        # Fecha de vencimiento
         if old_card.get('due') != new_card.get('due'):
             cambios.append(f"📅 *Fecha límite cambiada:* '{old_card.get('due', 'Sin fecha')}' → '{new_card.get('due', 'Sin fecha')}'")
-        # Etiquetas
         old_labels = set(label.get('name', '') for label in old_card.get('labels', []) if label.get('name'))
         new_labels = set(label.get('name', '') for label in new_card.get('labels', []) if label.get('name'))
         added_labels = new_labels - old_labels
@@ -371,7 +394,6 @@ def process_updated_card(old_card, new_card):
             cambios.append(f"🏷️ *Etiqueta añadida:* {', '.join(added_labels)}")
         if removed_labels:
             cambios.append(f"🏷️ *Etiqueta eliminada:* {', '.join(removed_labels)}")
-        # Adjuntos
         old_attachments = set((a.get('id'), a.get('name')) for a in old_card.get('attachments', []))
         new_attachments = set((a.get('id'), a.get('name')) for a in new_card.get('attachments', []))
         added_attachments = new_attachments - old_attachments
@@ -380,7 +402,6 @@ def process_updated_card(old_card, new_card):
             cambios.append("📎 *Adjunto añadido:*\n" + '\n'.join(f"- {name}" for (_id, name) in added_attachments))
         if removed_attachments:
             cambios.append("📎 *Adjunto eliminado:*\n" + '\n'.join(f"- {name}" for (_id, name) in removed_attachments))
-        # Asignados
         old_members = set(old_card.get('idMembers', []))
         new_members = set(new_card.get('idMembers', []))
         nuevos_asignados = new_members - old_members
@@ -389,7 +410,6 @@ def process_updated_card(old_card, new_card):
             message = ""
             if cambios:
                 message += "\n".join(cambios) + "\n"
-            # Asignados añadidos
             for member_id in nuevos_asignados:
                 trello_member = get_trello_member_details(member_id)
                 discord_user_id = get_discord_user_id(member_id)
@@ -432,7 +452,6 @@ def process_updated_card(old_card, new_card):
                 else:
                     if trello_member:
                         message += f"🙋‍♂️ Nuevo asignado: {trello_member.get('fullName', 'Desconocido')} (no mapeado a Discord)\n"
-            # Asignados eliminados
             for member_id in removidos:
                 trello_member = get_trello_member_details(member_id)
                 if trello_member:
@@ -440,13 +459,12 @@ def process_updated_card(old_card, new_card):
             message = message.strip()
             if message:
                 print(f"Enviando mensaje de actualización al canal {discord_channel_id}")
-                message_sent = send_message_to_channel(discord_channel_id, message)
-                print(f"Resultado del envío del mensaje de actualización: {message_sent}")
+                send_message_to_channel(discord_channel_id, message)
         else:
             print("No se detectaron cambios significativos. No se enviará mensaje general.")
         print(f"Procesamiento de tarjeta actualizada completado: {new_card['id']}")
     except Exception as e:
-        print(f"ERROR en process_updated_card: {e}")
+        print(f"ERROR en process_updated_card_list_based: {e}")
         import traceback
         print(traceback.format_exc())
 
