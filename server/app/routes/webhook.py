@@ -92,7 +92,7 @@ def trello_webhook():
                 discord_user_id = user_mapping['discord_user_id']
         
         # Crear un canal en Discord
-        channel_name = f"trello-{card_id[-4:]}-{re.sub(r'[^a-zA-Z0-9]', '-', card_name.lower())}"
+        channel_name = f"{card_id[-4:]}-{re.sub(r'[^a-zA-Z0-9]', '-', card_name.lower())}"
         channel = get_discord_service().create_channel_sync(
             integration['discord_server_id'],
             channel_name[:32]  # Discord tiene un límite de 32 caracteres para nombres de canales

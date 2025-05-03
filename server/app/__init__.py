@@ -1,12 +1,13 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
 import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import certifi
 import json
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 load_dotenv()
@@ -36,6 +37,15 @@ app.json_encoder = CustomJSONEncoder
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'clavedesarrollo123'
 app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY') or 'jwtsecretkey123'
 
+# Configuración JWT
+app.config['JWT_TOKEN_LOCATION'] = ['headers']
+app.config['JWT_HEADER_NAME'] = 'Authorization'
+app.config['JWT_HEADER_TYPE'] = 'Bearer'
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
+
+# Inicializar JWT Manager
+jwt = JWTManager(app)
+
 # Conexión a MongoDB Atlas
 mongo_uri = os.environ.get('MONGO_URI')
 try:
@@ -62,11 +72,17 @@ from app.routes.user_mapping import user_mapping_bp
 from app.routes.card_channel import card_channel_bp
 from app.routes.webhook import webhook_bp
 from app.routes.debug import debug_bp
+# Nuevos blueprints para Leads y Places
+from app.routes.leads import leads_bp
+from app.routes.places import places_bp
 
 app.register_blueprint(integration_bp, url_prefix='/api/integration')
 app.register_blueprint(user_mapping_bp, url_prefix='/api/user-mapping')
 app.register_blueprint(card_channel_bp, url_prefix='/api/card-channel')
 app.register_blueprint(webhook_bp, url_prefix='/api/webhook')
 app.register_blueprint(debug_bp, url_prefix='/api/debug')
+# Registrar nuevos blueprints
+app.register_blueprint(leads_bp, url_prefix='/api')
+app.register_blueprint(places_bp, url_prefix='/api')
 
 # Eliminar el bloque if __name__ == '__main__': para evitar ejecución en modo debug en producción 

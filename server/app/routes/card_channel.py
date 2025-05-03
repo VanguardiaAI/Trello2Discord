@@ -152,6 +152,96 @@ def create_list_channel_mapping(current_user_id, integration_id):
                 {'_id': ObjectId(mapping_id)},
                 {'$set': {'discord_message_id': message['id']}}
             )
+        
+        # Obtener y procesar todas las tarjetas existentes en esta lista
+        try:
+            current_app.logger.info(f"Procesando tarjetas existentes para la lista {data['trello_list_id']}")
+            # Obtener tarjetas de esta lista
+            cards_url = f"https://api.trello.com/1/lists/{data['trello_list_id']}/cards"
+            cards_params = {
+                'key': api_key,
+                'token': token,
+                'fields': 'id,name,desc,idList,idMembers,dateLastActivity,shortUrl,due,labels',
+                'attachments': 'true',
+                'attachment_fields': 'id,name,url,bytes,date',
+            }
+            cards_response = requests.get(cards_url, params=cards_params)
+            if cards_response.status_code == 200:
+                cards = cards_response.json()
+                current_app.logger.info(f"Se encontraron {len(cards)} tarjetas en la lista {data['trello_list_id']}")
+                
+                # Importar funciones necesarias de debug.py
+                from app.discord.bot import send_message_to_channel, send_message_with_button
+                from app.routes.debug import get_discord_user_id, get_trello_member_details
+                
+                # Procesar cada tarjeta como si fuera nueva
+                for card in cards:
+                    try:
+                        # Si la tarjeta tiene asignados, enviar mensaje con botón de confirmación
+                        assigned_discord_users = [get_discord_user_id(mid) for mid in card.get('idMembers', []) if get_discord_user_id(mid)]
+                        if assigned_discord_users:
+                            for member_id in card.get('idMembers', []):
+                                discord_user_id = get_discord_user_id(member_id)
+                                if discord_user_id:
+                                    confirmation_message = (
+                                        f"📄 **Tarea:** {card['name']}\n"
+                                    )
+                                    if card.get('desc'):
+                                        confirmation_message += f"📝 **Descripción:** {card.get('desc')}\n"
+                                    if card.get('due'):
+                                        confirmation_message += f"📅 **Fecha límite:** {card.get('due')}\n"
+                                    if card.get('labels'):
+                                        etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
+                                        if etiquetas:
+                                            confirmation_message += f"🏷️ **Etiquetas:** {etiquetas}\n"
+                                    if card.get('attachments'):
+                                        adjuntos = card['attachments']
+                                        if adjuntos:
+                                            confirmation_message += "📎 **Adjuntos:**\n"
+                                            for adj in adjuntos:
+                                                confirmation_message += f"- {adj.get('name', 'Archivo')}\n"
+                                    confirmation_message += f"🙋‍♂️ **Asignado a:** <@{discord_user_id}>\n"
+                                    if card.get('shortUrl'):
+                                        confirmation_message += f"\n📌 **Enlace a la tarjeta:** {card.get('shortUrl')}\n"
+                                    confirmation_message += "\nPor favor, confirma que vista esta asignación haciendo clic en el botón:"
+                                    send_message_with_button(
+                                        data['discord_channel_id'],
+                                        confirmation_message,
+                                        "Confirmar asignación",
+                                        card['id'],
+                                        discord_user_id,
+                                        "confirm"
+                                    )
+                        else:
+                            # Si no hay asignados, solo enviar mensaje informativo
+                            message = f"**Tarjeta existente en Trello**\n"
+                            message += f"📄 **Tarea:** {card['name']}\n"
+                            if card.get('desc'):
+                                message += f"📝 **Descripción:** {card.get('desc')}\n"
+                            if card.get('due'):
+                                message += f"📅 **Fecha límite:** {card.get('due')}\n"
+                            if card.get('labels'):
+                                etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
+                                if etiquetas:
+                                    message += f"🏷️ **Etiquetas:** {etiquetas}\n"
+                            if card.get('attachments'):
+                                adjuntos = card['attachments']
+                                if adjuntos:
+                                    message += "📎 **Adjuntos:**\n"
+                                    for adj in adjuntos:
+                                        message += f"- {adj.get('name', 'Archivo')}\n"
+                            if card.get('shortUrl'):
+                                message += f"\n📌 **Enlace a la tarjeta:** {card.get('shortUrl')}\n"
+                            send_message_to_channel(data['discord_channel_id'], message)
+                    except Exception as e:
+                        current_app.logger.error(f"Error al procesar tarjeta {card.get('id')}: {e}")
+                        continue
+            else:
+                current_app.logger.error(f"Error al obtener tarjetas de la lista: HTTP {cards_response.status_code}")
+        except Exception as e:
+            current_app.logger.error(f"Error al procesar tarjetas existentes: {e}")
+            # No retornamos error, continuamos con el proceso principal
+        
         return jsonify({
             'message': 'Mapeo de lista-canal creado exitosamente',
             'mapping_id': str(mapping_id)

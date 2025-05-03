@@ -6,6 +6,7 @@ import CardMappingsPage from './pages/CardMappingsPage';
 // import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import DebugPage from './pages/DebugPage';
+import LeadsPage from './pages/LeadsPage';
 import Layout from './components/Layout';
 import './App.css';
 
@@ -22,6 +23,7 @@ function App() {
         {/* <Route path="/profile" element={<Layout><ProfilePage /></Layout>} /> */}
         <Route path="/settings" element={<Layout><SettingsPage /></Layout>} />
         <Route path="/debug" element={<Layout><DebugPage /></Layout>} />
+        <Route path="/leads" element={<Layout><LeadsPage /></Layout>} />
         
         {/* Redirigir cualquier ruta desconocida a la página principal */}
         <Route path="*" element={<Navigate to="/" replace />} />

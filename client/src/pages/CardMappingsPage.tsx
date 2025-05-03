@@ -411,11 +411,13 @@ const CardMappingsPage = () => {
                       onChange={(e) => setSelectedTrelloList(e.target.value)}
                     >
                       <option value="">Selecciona una lista</option>
-                      {unmappedTrelloLists.map((list) => (
-                        <option key={list.id} value={list.id}>
-                          {list.name}
-                        </option>
-                      ))}
+                      {unmappedTrelloLists
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((list) => (
+                          <option key={list.id} value={list.id}>
+                            {list.name}
+                          </option>
+                        ))}
                     </select>
                   )}
                 </div>
@@ -434,11 +436,13 @@ const CardMappingsPage = () => {
                       onChange={(e) => setSelectedDiscordChannel(e.target.value)}
                     >
                       <option value="">Selecciona un canal</option>
-                      {unmappedDiscordChannels.map((channel) => (
-                        <option key={channel.id} value={channel.id}>
-                          #{channel.name}
-                        </option>
-                      ))}
+                      {unmappedDiscordChannels
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((channel) => (
+                          <option key={channel.id} value={channel.id}>
+                            #{channel.name}
+                          </option>
+                        ))}
                     </select>
                   )}
                 </div>

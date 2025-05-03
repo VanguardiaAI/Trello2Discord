@@ -269,7 +269,7 @@ def detect_and_process_trello_changes():
                     continue
                 guild_id = integration['discord_server_id']
                 # Crear canal de Discord y mapear
-                channel_name = f"trello-{lst['name'].lower().replace(' ', '-')[:90]}"
+                channel_name = f"{lst['name'].lower().replace(' ', '-')[:90]}"
                 safe_name = re.sub(r'[^a-zA-Z0-9_-]', '-', channel_name)
                 discord_channel_id = create_discord_channel(safe_name, guild_id)
                 if discord_channel_id:
@@ -381,27 +381,27 @@ def process_updated_card_list_based(old_card, new_card):
         if old_card.get('desc', '') != new_card.get('desc', ''):
             nueva_desc = new_card.get('desc', '').strip()
             if nueva_desc:
-                cambios.append(f"⚠️ *Descripción actualizada:* {nueva_desc}")
+                cambios.append(f"⚠️ *Descripción actualizada para tarea '{new_card.get('name')}':* {nueva_desc}")
             else:
-                cambios.append("⚠️ *Descripción eliminada*")
+                cambios.append(f"⚠️ *Descripción eliminada para tarea '{new_card.get('name')}'*")
         if old_card.get('due') != new_card.get('due'):
-            cambios.append(f"📅 *Fecha límite cambiada:* '{old_card.get('due', 'Sin fecha')}' → '{new_card.get('due', 'Sin fecha')}'")
+            cambios.append(f"📅 *Fecha límite cambiada para tarea '{new_card.get('name')}':* '{old_card.get('due', 'Sin fecha')}' → '{new_card.get('due', 'Sin fecha')}'")
         old_labels = set(label.get('name', '') for label in old_card.get('labels', []) if label.get('name'))
         new_labels = set(label.get('name', '') for label in new_card.get('labels', []) if label.get('name'))
         added_labels = new_labels - old_labels
         removed_labels = old_labels - new_labels
         if added_labels:
-            cambios.append(f"🏷️ *Etiqueta añadida:* {', '.join(added_labels)}")
+            cambios.append(f"🏷️ *Etiqueta añadida para tarea '{new_card.get('name')}':* {', '.join(added_labels)}")
         if removed_labels:
-            cambios.append(f"🏷️ *Etiqueta eliminada:* {', '.join(removed_labels)}")
+            cambios.append(f"🏷️ *Etiqueta eliminada para tarea '{new_card.get('name')}':* {', '.join(removed_labels)}")
         old_attachments = set((a.get('id'), a.get('name')) for a in old_card.get('attachments', []))
         new_attachments = set((a.get('id'), a.get('name')) for a in new_card.get('attachments', []))
         added_attachments = new_attachments - old_attachments
         removed_attachments = old_attachments - new_attachments
         if added_attachments:
-            cambios.append("📎 *Adjunto añadido:*\n" + '\n'.join(f"- {name}" for (_id, name) in added_attachments))
+            cambios.append(f"📎 *Adjunto añadido para tarea '{new_card.get('name')}':*\n" + '\n'.join(f"- {name}" for (_id, name) in added_attachments))
         if removed_attachments:
-            cambios.append("📎 *Adjunto eliminado:*\n" + '\n'.join(f"- {name}" for (_id, name) in removed_attachments))
+            cambios.append(f"📎 *Adjunto eliminado para tarea '{new_card.get('name')}':*\n" + '\n'.join(f"- {name}" for (_id, name) in removed_attachments))
         old_members = set(old_card.get('idMembers', []))
         new_members = set(new_card.get('idMembers', []))
         nuevos_asignados = new_members - old_members
@@ -414,12 +414,6 @@ def process_updated_card_list_based(old_card, new_card):
                 trello_member = get_trello_member_details(member_id)
                 discord_user_id = get_discord_user_id(member_id)
                 if discord_user_id:
-                    mention_message = (
-                        f"🙋‍♂️ <@{discord_user_id}> ¡Has sido asignado a la tarjeta!\n"
-                    )
-                    if new_card.get('desc'):
-                        mention_message += f"📝 **Descripción:** {new_card.get('desc')}\n"
-                    send_message_to_channel(discord_channel_id, mention_message)
                     confirmation_message = (
                         f"📄 **Tarea:** {new_card['name']}\n"
                     )
