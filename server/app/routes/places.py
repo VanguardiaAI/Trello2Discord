@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
-from app.services.places_service import search_places, get_place_details
+from app.services.places_service import search_places, get_place_details, subdivide_area_search
 from app.services.geocoding_service import geocode_address
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import os
@@ -49,12 +49,109 @@ def search():
         # Geocodificar la dirección
         geo = geocode_address(address)
         latlng = f"{geo['lat']},{geo['lng']}"
-        results, next_token = search_places(query, latlng, radius, max_results, next_page_token, fetch_all)
+        
+        # Si hay token de paginación, continuamos la búsqueda anterior
+        if next_page_token:
+            logger.info(f"Continuando búsqueda con token de paginación")
+            results, next_token = search_places(query, latlng, radius, max_results, next_page_token, fetch_all)
+        else:
+            # Si no hay token, es una nueva búsqueda
+            logger.info(f"Iniciando nueva búsqueda: {query} en {address} con radio {radius}m")
+            results, next_token = search_places(query, latlng, radius, max_results, None, fetch_all)
+        
         return jsonify({
             "results": results,
             "next_page_token": next_token
         })
     except Exception as e:
+        logger.error(f"Error en búsqueda: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@places_bp.route("/places/search/subdivide", methods=["GET"])
+@auth_optional
+def search_subdivided():
+    """Buscar places utilizando la estrategia de subdivisión de área para obtener más resultados"""
+    query = request.args.get('query')
+    address = request.args.get('address')
+    radius = request.args.get('radius', 5000, type=int)
+    max_results = request.args.get('max_results', 100, type=int)
+    
+    if not query or not address:
+        return jsonify({"error": "Se requieren los parámetros 'query' y 'address'"}), 400
+    
+    try:
+        # Geocodificar la dirección
+        geo = geocode_address(address)
+        
+        logger.info(f"Iniciando búsqueda subdividida: {query} en {address} con radio {radius}m")
+        
+        # Realizar búsqueda subdividida
+        results, _ = subdivide_area_search(query, geo['lat'], geo['lng'], radius, max_results)
+        
+        return jsonify({
+            "results": results,
+            "next_page_token": None,  # No hay paginación en búsquedas subdivididas
+            "subdivided": True,
+            "total_results": len(results)
+        })
+    except Exception as e:
+        logger.error(f"Error en búsqueda subdividida: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@places_bp.route("/places/search/full", methods=["GET"])
+@auth_optional
+def search_full():
+    """Buscar todos los lugares posibles combinando múltiples estrategias"""
+    query = request.args.get('query')
+    address = request.args.get('address')
+    radius = request.args.get('radius', 5000, type=int)
+    
+    if not query or not address:
+        return jsonify({"error": "Se requieren los parámetros 'query' y 'address'"}), 400
+    
+    try:
+        # Geocodificar la dirección
+        geo = geocode_address(address)
+        latlng = f"{geo['lat']},{geo['lng']}"
+        
+        # 1. Primero hacemos una búsqueda normal con fetch_all=True
+        logger.info(f"Iniciando búsqueda completa: Paso 1 - Búsqueda estándar")
+        standard_results, _ = search_places(query, latlng, radius, 100, None, True)
+        
+        # 2. Luego hacemos búsqueda subdividida
+        logger.info(f"Iniciando búsqueda completa: Paso 2 - Búsqueda subdividida")
+        subdivided_results, _ = subdivide_area_search(query, geo['lat'], geo['lng'], radius, 100)
+        
+        # Combinar resultados y eliminar duplicados
+        all_results = []
+        place_ids = set()
+        
+        # Procesar resultados estándar
+        for result in standard_results:
+            place_id = result.get("place_id")
+            if place_id and place_id not in place_ids:
+                place_ids.add(place_id)
+                all_results.append(result)
+                
+        # Procesar resultados de búsqueda subdividida
+        for result in subdivided_results:
+            place_id = result.get("place_id")
+            if place_id and place_id not in place_ids:
+                place_ids.add(place_id)
+                all_results.append(result)
+        
+        logger.info(f"Búsqueda completa finalizada. Resultados totales: {len(all_results)}")
+        
+        return jsonify({
+            "results": all_results,
+            "next_page_token": None,
+            "full_search": True,
+            "total_results": len(all_results),
+            "standard_results": len(standard_results),
+            "subdivided_results": len(subdivided_results)
+        })
+    except Exception as e:
+        logger.error(f"Error en búsqueda completa: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @places_bp.route("/places/details/<place_id>", methods=["GET"])
