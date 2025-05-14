@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { AlertCircle, Download, RefreshCw, Search, X, Users, MapPin, Mail, Save, Edit, Database, ChevronRight, Trash2, Tag, MessageSquare, Check, Plus, Filter } from 'lucide-react';
+import { AlertCircle, Download, RefreshCw, Search, X, Users, MapPin, Mail, Save, Edit, Database, ChevronRight, Trash2, Tag, Check, Plus, Filter } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -50,11 +50,6 @@ interface SearchState {
   radius: number;
 }
 
-interface Label {
-  text: string;
-  color?: string;
-}
-
 type Tab = 'search' | 'leads';
 
 const LeadsPage = () => {
@@ -73,7 +68,6 @@ const LeadsPage = () => {
   const [importing, setImporting] = useState<boolean>(false);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [searchHistory, setSearchHistory] = useState<SearchState[]>([]);
-  const [totalResultsCount, setTotalResultsCount] = useState<number>(0);
   const [allResultsFetched, setAllResultsFetched] = useState<boolean>(false);
   
   // Estado para edición de email
@@ -96,8 +90,6 @@ const LeadsPage = () => {
   const [showLabelForm, setShowLabelForm] = useState<boolean>(false);
   const [showLabelsManagement, setShowLabelsManagement] = useState<boolean>(false);
   const [savingLabel, setSavingLabel] = useState<boolean>(false);
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
-  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [statusOptions] = useState<string[]>([
     'Nuevo', 'Por contactar', 'Contactado', 'Interesado', 'No interesado', 'En seguimiento', 'Cliente'
   ]);
@@ -182,8 +174,6 @@ const LeadsPage = () => {
       }
       
       // Actualizar contadores y token para la siguiente página
-      setTotalResultsCount(prev => prev + response.data.results.length);
-      
       if (response.data.next_page_token) {
         setNextPageToken(response.data.next_page_token);
       } else {
@@ -275,7 +265,6 @@ const LeadsPage = () => {
         setSearchResults(response.data.results);
         setNextPageToken(null);
         setAllResultsFetched(true);
-        setTotalResultsCount(response.data.total_results || response.data.results.length);
       })
       .catch(err => {
         console.error('Error en la búsqueda completa:', err);
@@ -622,41 +611,6 @@ const LeadsPage = () => {
     }
   };
 
-  // Función para actualizar el estado de los leads seleccionados
-  const updateStatusForSelected = async (status: string) => {
-    if (selectedLeads.length === 0 || !status) return;
-    
-    try {
-      setLoading(true);
-      const token = localStorage.getItem('token');
-      
-      await axios.post(
-        `${API_URL}/leads/batch/update`,
-        { 
-          leads: selectedLeads,
-          status
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      // Actualizar la lista local
-      setLeads(leads.map(lead => {
-        if (selectedLeads.includes(lead.place_id)) {
-          return { ...lead, status };
-        }
-        return lead;
-      }));
-      
-      setSelectedStatus('');
-      setError(null);
-    } catch (err) {
-      console.error('Error al actualizar estado:', err);
-      setError('Error al actualizar estado. Inténtalo de nuevo más tarde.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Función para añadir o actualizar una nota en un lead
   const addOrUpdateNoteToLead = async (leadId: string) => {
     if (!newNote.trim()) return;
@@ -786,61 +740,6 @@ const LeadsPage = () => {
     });
   };
 
-  // Función para subdividir la búsqueda en áreas más pequeñas
-  const handleSubdivideSearch = () => {
-    if (!query || !address) {
-      setError('Se requieren el término de búsqueda y la dirección.');
-      return;
-    }
-    
-    try {
-      setSearchLoading(true);
-      setError(null);
-      setSearchResults([]);
-      setNextPageToken(null);
-      setAllResultsFetched(false);
-      
-      const token = localStorage.getItem('token');
-      
-      // Guardamos la configuración de búsqueda actual
-      const currentSearch: SearchState = {
-        query,
-        address,
-        radius
-      };
-      setSearchHistory([...searchHistory, currentSearch]);
-      
-      const params = new URLSearchParams({
-        query,
-        address,
-        radius: radius.toString()
-      });
-      
-      // Llamar al endpoint de búsqueda subdividida
-      axios.get(`${API_URL}/places/search/subdivide?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      .then(response => {
-        setSearchResults(response.data.results);
-        // No hay token en búsquedas subdivididas
-        setNextPageToken(null);
-        setAllResultsFetched(true);
-        setTotalResultsCount(response.data.total_results || response.data.results.length);
-      })
-      .catch(err => {
-        console.error('Error en la búsqueda subdividida:', err);
-        setError('Error al buscar negocios con la estrategia subdividida. Verifica tu conexión e inténtalo de nuevo.');
-      })
-      .finally(() => {
-        setSearchLoading(false);
-      });
-    } catch (err) {
-      console.error('Error en la búsqueda subdividida:', err);
-      setError('Error al buscar negocios. Verifica tu conexión e inténtalo de nuevo.');
-      setSearchLoading(false);
-    }
-  };
-
   // Añadir un componente reutilizable para seleccionar estado
   const StatusSelector = ({ lead, showSelector, setShowSelector }: { 
     lead: Lead, 
@@ -848,8 +747,8 @@ const LeadsPage = () => {
     setShowSelector: (show: boolean) => void 
   }) => {
     const [loading, setLoading] = useState(false);
-    const [selectedStatus, setSelectedStatus] = useState(lead.status || 'Nuevo');
     const selectorRef = useRef<HTMLDivElement>(null);
+    const statusOptions = ['Nuevo', 'Por contactar', 'Contactado', 'Interesado', 'No interesado', 'En seguimiento', 'Cliente'];
 
     // Hook para cerrar el selector al hacer clic fuera
     useEffect(() => {
@@ -890,15 +789,15 @@ const LeadsPage = () => {
       } finally {
         setLoading(false);
       }
-  };
+    };
 
-  return (
+    return (
       <div className="relative" ref={selectorRef}>
         {showSelector && (
           <div className="absolute top-full left-0 z-10 mt-1 w-48 bg-white rounded-md shadow-lg border border-gray-200">
             <div className="py-1">
               {statusOptions.map(status => (
-              <button 
+                <button 
                   key={status}
                   onClick={() => handleChangeStatus(status)}
                   disabled={loading}
@@ -907,7 +806,7 @@ const LeadsPage = () => {
                   }`}
                 >
                   {status}
-              </button>
+                </button>
               ))}
             </div>
             {loading && (
@@ -917,11 +816,45 @@ const LeadsPage = () => {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
-          )}
-        </div>
+            )}
+          </div>
         )}
       </div>
     );
+  };
+
+  // Función para actualizar el estado de los leads seleccionados
+  const updateStatusForSelected = async (status: string) => {
+    if (selectedLeads.length === 0 || !status) return;
+    
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      
+      await axios.post(
+        `${API_URL}/leads/batch/update`,
+        { 
+          leads: selectedLeads,
+          status
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Actualizar la lista local
+      setLeads(leads.map(lead => {
+        if (selectedLeads.includes(lead.place_id)) {
+          return { ...lead, status };
+        }
+        return lead;
+      }));
+      
+      setError(null);
+    } catch (err) {
+      console.error('Error al actualizar estado:', err);
+      setError('Error al actualizar estado. Inténtalo de nuevo más tarde.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -1324,26 +1257,18 @@ const LeadsPage = () => {
                   </label>
                   <div className="flex">
                     <select
-                      value={selectedStatus}
-                      onChange={(e) => setSelectedStatus(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded-l-md"
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          updateStatusForSelected(e.target.value);
+                        }
+                      }}
+                      className="w-full p-2 border border-gray-300 rounded-md"
                     >
                       <option value="">Seleccionar estado</option>
                       {statusOptions.map(option => (
                         <option key={option} value={option}>{option}</option>
                       ))}
                     </select>
-                    <button
-                      onClick={() => updateStatusForSelected(selectedStatus)}
-                      disabled={!selectedStatus}
-                      className={`px-3 py-2 rounded-r-md ${
-                        selectedStatus
-                          ? 'bg-blue-600 text-white hover:bg-blue-700'
-                          : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      }`}
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
                 
