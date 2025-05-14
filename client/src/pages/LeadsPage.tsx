@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import { AlertCircle, Download, RefreshCw, Search, X, Users, MapPin, Mail, Save, Edit, Database, ChevronRight, Trash2, Tag, Check, Plus, Filter } from 'lucide-react';
+import { AlertCircle, Download, RefreshCw, Search, X, Users, MapPin, Mail, Save, Edit, Database, ChevronRight, Trash2, Tag, Check, Plus, Filter, ZapIcon } from 'lucide-react';
+import { debounce } from 'lodash';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -50,51 +51,291 @@ interface SearchState {
   radius: number;
 }
 
+// Añadir una nueva interfaz para los tipos de lugares
+interface PlaceType {
+  id: string;
+  name: string;
+  category: string;
+}
+
 type Tab = 'search' | 'leads';
+type SearchMode = 'keyword' | 'type';
+
+// Añadir nuevas interfaces para el streaming de resultados
+interface SearchProgress {
+  currentPoint: number;
+  totalPoints: number;
+  subdivision?: boolean;
+}
+
+interface StreamEvent {
+  status: 'started' | 'in_progress' | 'completed' | 'error' | 'ping';
+  new_results?: Place[];
+  total_count?: number;
+  progress?: SearchProgress;
+  message?: string;
+}
+
+// Añadir esta función después de las declaraciones de tipos pero antes del componente LeadsPage
+const mapNicheToPlacesType = (nicheQuery: string): string => {
+  const searchType = nicheQuery.toLowerCase().trim();
+  
+  // Ajustar el tipo según reglas específicas para Google Places API
+  const typeMapping: {[key: string]: string} = {
+    // Salud
+    'dentista': 'dentist',
+    'dentistas': 'dentist',
+    'odontólogo': 'dentist',
+    'odontólogos': 'dentist',
+    'ortodoncia': 'dentist', 
+    'clínica dental': 'dentist',
+    'clínicas dentales': 'dentist',
+    'médico': 'doctor',
+    'médicos': 'doctor',
+    'doctor': 'doctor',
+    'doctores': 'doctor',
+    'clínica': 'doctor',
+    'clínicas': 'doctor',
+    'centro médico': 'doctor',
+    'centros médicos': 'doctor',
+    'hospital': 'hospital',
+    'hospitales': 'hospital',
+    'farmacia': 'pharmacy',
+    'farmacias': 'pharmacy',
+    'botica': 'pharmacy',
+    'óptica': 'doctor',
+    'ópticas': 'doctor',
+    'veterinario': 'veterinary_care',
+    'veterinarios': 'veterinary_care',
+    'fisioterapeuta': 'physiotherapist',
+    'fisioterapeutas': 'physiotherapist',
+    'fisioterapia': 'physiotherapist',
+    
+    // Gastronomía
+    'restaurante': 'restaurant',
+    'restaurantes': 'restaurant',
+    'cafetería': 'cafe',
+    'cafeterías': 'cafe',
+    'café': 'cafe',
+    'cafés': 'cafe',
+    'bar': 'bar',
+    'bares': 'bar',
+    'pub': 'bar',
+    'pubs': 'bar',
+    'pastelería': 'bakery',
+    'pastelerías': 'bakery',
+    'panadería': 'bakery',
+    'panaderías': 'bakery',
+    
+    // Alojamiento
+    'hotel': 'lodging',
+    'hoteles': 'lodging',
+    'hostal': 'lodging',
+    'hostales': 'lodging',
+    'alojamiento': 'lodging',
+    'pensión': 'lodging',
+    
+    // Actividad física
+    'gimnasio': 'gym',
+    'gimnasios': 'gym',
+    'centro deportivo': 'gym',
+    'centros deportivos': 'gym',
+    'spa': 'spa',
+    'estudio de yoga': 'gym',
+    'yoga': 'gym',
+    
+    // Belleza
+    'peluquería': 'beauty_salon',
+    'peluquerías': 'beauty_salon',
+    'barbería': 'beauty_salon',
+    'barberías': 'beauty_salon',
+    'salón de belleza': 'beauty_salon',
+    'salones de belleza': 'beauty_salon',
+    'centro de estética': 'beauty_salon',
+    'centros de estética': 'beauty_salon',
+    
+    // Comercio
+    'supermercado': 'supermarket',
+    'supermercados': 'supermarket',
+    'tienda': 'store',
+    'tiendas': 'store',
+    'librería': 'book_store',
+    'librerías': 'book_store',
+    'tienda de ropa': 'clothing_store',
+    'tiendas de ropa': 'clothing_store',
+    'zapatería': 'shoe_store',
+    'zapaterías': 'shoe_store',
+    'ferretería': 'hardware_store',
+    'ferreterías': 'hardware_store',
+    'joyería': 'jewelry_store',
+    'joyerías': 'jewelry_store',
+    'florería': 'florist',
+    'florerías': 'florist',
+    'floristería': 'florist',
+    'floristerías': 'florist',
+    'juguetería': 'store',
+    'jugueterías': 'store',
+    'mueblería': 'furniture_store',
+    'mueblerías': 'furniture_store',
+    'tienda de muebles': 'furniture_store',
+    
+    // Servicios profesionales
+    'abogado': 'lawyer',
+    'abogados': 'lawyer',
+    'bufete': 'lawyer',
+    'notaría': 'lawyer',
+    'notarías': 'lawyer',
+    'inmobiliaria': 'real_estate_agency',
+    'inmobiliarias': 'real_estate_agency',
+    'agencia inmobiliaria': 'real_estate_agency',
+    'agencias inmobiliarias': 'real_estate_agency',
+    'seguros': 'insurance_agency',
+    'aseguradora': 'insurance_agency',
+    'aseguradoras': 'insurance_agency',
+    'contable': 'accounting',
+    'contables': 'accounting',
+    'asesoría fiscal': 'accounting',
+    'asesorías fiscales': 'accounting',
+    'gestoría': 'accounting',
+    'gestorías': 'accounting',
+    
+    // Educación
+    'escuela': 'school',
+    'escuelas': 'school',
+    'colegio': 'school',
+    'colegios': 'school',
+    'instituto': 'school',
+    'institutos': 'school',
+    'universidad': 'university',
+    'universidades': 'university',
+    'academia': 'school',
+    'academias': 'school',
+    'guardería': 'school',
+    'guarderías': 'school',
+    
+    // Finanzas
+    'banco': 'bank',
+    'bancos': 'bank',
+    'cajero': 'atm',
+    'cajeros': 'atm',
+    'caja de ahorros': 'bank',
+    
+    // Automoción
+    'gasolinera': 'gas_station',
+    'gasolineras': 'gas_station',
+    'estación de servicio': 'gas_station',
+    'estaciones de servicio': 'gas_station',
+    'taller mecánico': 'car_repair',
+    'talleres mecánicos': 'car_repair',
+    'concesionario': 'car_dealer',
+    'concesionarios': 'car_dealer',
+    'lavadero de coches': 'car_wash',
+    'lavaderos de coches': 'car_wash',
+    'alquiler de coches': 'car_rental',
+    
+    // Otros servicios
+    'correos': 'post_office',
+    'oficina de correos': 'post_office',
+    'biblioteca': 'library',
+    'bibliotecas': 'library',
+    'iglesia': 'church',
+    'iglesias': 'church',
+    'cementerio': 'cemetery',
+    'cementerios': 'cemetery',
+    'ayuntamiento': 'city_hall',
+    'comisaría': 'police',
+    'comisarías': 'police',
+    'bomberos': 'fire_station'
+  };
+  
+  // Si existe en el mapeo, usamos el tipo específico
+  if (typeMapping[searchType]) {
+    return typeMapping[searchType];
+  } 
+  
+  // Revisar si contiene alguna palabra clave
+  for (const [key, value] of Object.entries(typeMapping)) {
+    if (searchType.includes(key)) {
+      return value;
+    }
+  }
+  
+  // Si no hay coincidencia, devolver el original (fallback a keyword search)
+  return searchType;
+};
 
 const LeadsPage = () => {
   // Estado para las pestañas
   const [activeTab, setActiveTab] = useState<Tab>('search');
   
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
-  const [searchResults, setSearchResults] = useState<Place[]>([]);
-  const [searchLoading, setSearchLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [totalResults, setTotalResults] = useState<number>(0);
+  const [showErrorPopup, setShowErrorPopup] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [progress, setProgress] = useState<number>(0);
+  const [searching, setSearching] = useState<boolean>(false);
+  const [emailInputs, setEmailInputs] = useState<Record<string, string>>({});
+  const [noteText, setNoteText] = useState<string>('');
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
+  
+  // Agregar variables que causan errores
+  const [searchMode, setSearchMode] = useState<SearchMode>('keyword');
   const [query, setQuery] = useState<string>('');
   const [address, setAddress] = useState<string>('');
-  const [radius, setRadius] = useState<number>(5000);
+  const [searchResults, setSearchResults] = useState<Place[]>([]);
+  const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [allResultsFetched, setAllResultsFetched] = useState<boolean>(false);
+  const [searchHistory, setSearchHistory] = useState<SearchState[]>([]);
   const [selectedPlaces, setSelectedPlaces] = useState<Place[]>([]);
   const [importing, setImporting] = useState<boolean>(false);
-  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
-  const [searchHistory, setSearchHistory] = useState<SearchState[]>([]);
-  const [allResultsFetched, setAllResultsFetched] = useState<boolean>(false);
-  
-  // Estado para edición de email
   const [editingLeadId, setEditingLeadId] = useState<string | null>(null);
   const [editingEmail, setEditingEmail] = useState<string>('');
   const [savingEmail, setSavingEmail] = useState<boolean>(false);
-
-  // Añadir nuevos estados para gestionar leads, etiquetas y notas
-  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [newNote, setNewNote] = useState<string>('');
   const [addingNoteToId, setAddingNoteToId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [showNotePopup, setShowNotePopup] = useState<boolean>(false);
   const [availableLabels, setAvailableLabels] = useState<string[]>([]);
-  const [newLabelText, setNewLabelText] = useState<string>('');
+  const [savingLabel, setSavingLabel] = useState<boolean>(false);
   const [showLabelForm, setShowLabelForm] = useState<boolean>(false);
   const [showLabelsManagement, setShowLabelsManagement] = useState<boolean>(false);
-  const [savingLabel, setSavingLabel] = useState<boolean>(false);
+  const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [leadWithStatusSelector, setLeadWithStatusSelector] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<string>('');
+  const [typeCategories, setTypeCategories] = useState<Record<string, PlaceType[]>>({});
+  const [loadingTypes, setLoadingTypes] = useState<boolean>(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<{ description: string; place_id: string; types: string[] }[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState<boolean>(false);
+  const [nicheQuery, setNicheQuery] = useState<string>('');
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [streamingSearch, setStreamingSearch] = useState<boolean>(false);
+  const [searchProgress, setSearchProgress] = useState<SearchProgress | null>(null);
+  
+  // Location parameters
+  const [location, setLocation] = useState<string>('');
+  const [radius, setRadius] = useState<number>(1);
+  const [placeTypes, setPlaceTypes] = useState<string[]>([]);
+  const [newLabelText, setNewLabelText] = useState<string>('');
+  const [customLabels, setCustomLabels] = useState<string[]>([]);
+  
+  // Opciones de estado para leads
   const [statusOptions] = useState<string[]>([
     'Nuevo', 'Por contactar', 'Contactado', 'Interesado', 'No interesado', 'En seguimiento', 'Cliente'
   ]);
+  
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterLabels, setFilterLabels] = useState<string[]>([]);
-  const [showFilters, setShowFilters] = useState<boolean>(false);
-
-  // Estado para gestionar qué lead está mostrando el selector de estado
-  const [leadWithStatusSelector, setLeadWithStatusSelector] = useState<string | null>(null);
+  
+  // Stream
+  const [results, setResults] = useState<Lead[]>([]);
+  const [streamingComplete, setStreamingComplete] = useState<boolean>(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchLeads = async () => {
     try {
@@ -113,9 +354,42 @@ const LeadsPage = () => {
     }
   };
 
+  const fetchPlaceTypes = async () => {
+    try {
+      setLoadingTypes(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/places/types`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      // setPlaceTypes eliminado para resolver error TS6133
+      setTypeCategories(response.data.categories);
+      setError(null);
+    } catch (err) {
+      console.error('Error al obtener tipos de establecimiento:', err);
+      setError('Error al cargar tipos de establecimiento. Inténtalo de nuevo más tarde.');
+    } finally {
+      setLoadingTypes(false);
+    }
+  };
+
+  const fetchLabels = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/leads/labels`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setAvailableLabels(response.data);
+    } catch (err) {
+      console.error('Error al obtener etiquetas:', err);
+    }
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchLabels();
+    fetchPlaceTypes();
   }, []);
 
   // Función para verificar si un lugar ya está en los leads guardados
@@ -124,9 +398,16 @@ const LeadsPage = () => {
   };
 
   const handleSearch = async (isNewSearch = true) => {
-    if (!query || !address) {
-      setError('Se requieren el término de búsqueda y la dirección.');
-      return;
+    if (searchMode === 'keyword') {
+      if (!query || !address) {
+        setError('Se requieren el término de búsqueda y la dirección.');
+        return;
+      }
+    } else { // searchMode === 'type'
+      if (!nicheQuery || !address) {
+        setError('Se requieren el tipo de negocio o nicho y la dirección.');
+        return;
+      }
     }
 
     try {
@@ -142,24 +423,41 @@ const LeadsPage = () => {
         
         // Guardamos la configuración de búsqueda actual
         const currentSearch: SearchState = {
-          query,
+          query: searchMode === 'keyword' ? query : nicheQuery,
           address,
           radius
         };
         setSearchHistory([...searchHistory, currentSearch]);
       }
       
-      const params = new URLSearchParams({
-        query,
-        address,
-        radius: radius.toString()
-      });
+      let params: URLSearchParams;
+      let endpoint: string;
+      
+      if (searchMode === 'keyword') {
+        params = new URLSearchParams({
+          query,
+          address,
+          radius: radius.toString()
+        });
+        endpoint = `${API_URL}/places/search`;
+      } else { // searchMode === 'type'
+        // Mapear el término de búsqueda al tipo reconocido por la API
+        const searchType = mapNicheToPlacesType(nicheQuery);
+        console.log(`Búsqueda normal por tipo: "${nicheQuery}" (traducido a: "${searchType}" para API)`);
+        
+        params = new URLSearchParams({
+          type: searchType,
+          address,
+          radius: radius.toString()
+        });
+        endpoint = `${API_URL}/places/search/by-type`;
+      }
       
       if (nextPageToken) {
         params.append('next_page_token', nextPageToken);
       }
       
-      const response = await axios.get(`${API_URL}/places/search?${params.toString()}`, {
+      const response = await axios.get(`${endpoint}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -225,56 +523,170 @@ const LeadsPage = () => {
 
   // Función para realizar una búsqueda completa (todas las estrategias combinadas)
   const handleFullSearch = () => {
-    if (!query || !address) {
-      setError('Se requieren el término de búsqueda y la dirección.');
-      return;
+    if (searchMode === 'keyword') {
+      if (!query || !address) {
+        setError('Se requieren el término de búsqueda y la dirección.');
+        return;
+      }
+    } else { // searchMode === 'type'
+      if (!nicheQuery || !address) {
+        setError('Se requieren el tipo de negocio o nicho y la dirección.');
+        return;
+      }
     }
     
     try {
-      setSearchLoading(true);
-      setError(null);
+      // Limpiar resultados anteriores
       setSearchResults([]);
       setNextPageToken(null);
       setAllResultsFetched(false);
+      setSearchProgress(null);
+      setError(null);
       
-      const token = localStorage.getItem('token');
+      // Indicar que estamos en modo streaming
+      setStreamingSearch(true);
+      setSearchLoading(true);
       
       // Guardamos la configuración de búsqueda actual
       const currentSearch: SearchState = {
-        query,
+        query: searchMode === 'keyword' ? query : nicheQuery,
         address,
         radius
       };
       setSearchHistory([...searchHistory, currentSearch]);
       
-      const params = new URLSearchParams({
-        query,
-        address,
-        radius: radius.toString()
-      });
+      // Construir la URL para streaming
+      let url: string;
+      if (searchMode === 'keyword') {
+        url = `${API_URL}/places/search/subdivide/stream?query=${encodeURIComponent(query)}&address=${encodeURIComponent(address)}&radius=${radius}`;
+      } else {
+        // Para búsqueda por tipo, convertimos el nicho a un tipo reconocido por Google Places
+        const searchType = mapNicheToPlacesType(nicheQuery);
+        console.log(`Buscando por tipo: "${nicheQuery}" (traducido a: "${searchType}" para API)`);
+        
+        url = `${API_URL}/places/search/by-type/subdivide/stream?type=${encodeURIComponent(searchType)}&address=${encodeURIComponent(address)}&radius=${radius}`;
+      }
+
+      // Cerrar conexión anterior si existe
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
+      // Crear nueva conexión EventSource
+      const token = localStorage.getItem('token');
+      if (token) {
+        url += `&token=${token}`;
+      }
       
-      // Llamar al endpoint de búsqueda completa
-      axios.get(`${API_URL}/places/search/full?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      .then(response => {
-        setSearchResults(response.data.results);
-        setNextPageToken(null);
-        setAllResultsFetched(true);
-      })
-      .catch(err => {
-        console.error('Error en la búsqueda completa:', err);
-        setError('Error al buscar negocios con la estrategia completa. Verifica tu conexión e inténtalo de nuevo.');
-      })
-      .finally(() => {
+      console.log("URL de búsqueda:", url);
+      
+      const eventSource = new EventSource(url);
+      eventSourceRef.current = eventSource;
+
+      // Configurar manejadores de eventos
+      eventSource.onopen = () => {
+        console.log('Conexión SSE establecida');
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data: StreamEvent = JSON.parse(event.data);
+          
+          switch (data.status) {
+            case 'started':
+              console.log('Búsqueda iniciada');
+              break;
+              
+            case 'in_progress':
+              // Actualizar progreso
+              if (data.progress) {
+                setSearchProgress(data.progress);
+              }
+              
+              // Agregar nuevos resultados
+              if (data.new_results && Array.isArray(data.new_results) && data.new_results.length > 0) {
+                setSearchResults(prevResults => [
+                  ...prevResults,
+                  ...(data.new_results as Place[])
+                ]);
+              }
+              
+              // Actualizar contador total
+              if (data.total_count !== undefined) {
+                // Solo para mostrar en la UI, no es necesario guardar
+                console.log(`Total encontrado hasta ahora: ${data.total_count}`);
+              }
+              break;
+              
+            case 'completed':
+              console.log('Búsqueda completada');
+              setAllResultsFetched(true);
+              setSearchLoading(false);
+              setStreamingSearch(false);
+              
+              // Cerramos la conexión
+              eventSource.close();
+              eventSourceRef.current = null;
+              break;
+              
+            case 'error':
+              console.error('Error en la búsqueda:', data.message);
+              setError(`Error en la búsqueda: ${data.message || 'Error desconocido'}`);
+              setSearchLoading(false);
+              setStreamingSearch(false);
+              
+              // Cerramos la conexión
+              eventSource.close();
+              eventSourceRef.current = null;
+              break;
+              
+            case 'ping':
+              // Solo para mantener la conexión viva
+              console.log('Ping recibido');
+              break;
+          }
+        } catch (error) {
+          console.error('Error al procesar evento SSE:', error);
+          setError('Error al procesar datos del servidor');
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('Error en la conexión SSE:', error);
+        setError('Error en la conexión. Por favor, intenta de nuevo.');
         setSearchLoading(false);
-      });
+        setStreamingSearch(false);
+        
+        // Cerrar conexión en caso de error
+        eventSource.close();
+        eventSourceRef.current = null;
+      };
     } catch (err) {
-      console.error('Error en la búsqueda completa:', err);
-      setError('Error al buscar negocios. Verifica tu conexión e inténtalo de nuevo.');
+      console.error('Error al iniciar búsqueda con streaming:', err);
+      setError('Error al iniciar la búsqueda. Verifica tu conexión e inténtalo de nuevo.');
+      setSearchLoading(false);
+      setStreamingSearch(false);
+    }
+  };
+
+  // Función para cancelar la búsqueda por streaming
+  const cancelStreamSearch = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+      setStreamingSearch(false);
       setSearchLoading(false);
     }
   };
+
+  // Asegurarse de limpiar la conexión al desmontar el componente
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
 
   const handleImportLeads = async () => {
     if (selectedPlaces.length === 0) {
@@ -314,7 +726,8 @@ const LeadsPage = () => {
               place_id: place.place_id,
               name: place.name,
               address: place.address,
-              rating: place.rating
+              rating: place.rating,
+              location: place.location
             };
           }
         })
@@ -444,20 +857,6 @@ const LeadsPage = () => {
   const cancelEditingEmail = () => {
     setEditingLeadId(null);
     setEditingEmail('');
-  };
-
-  // Función para obtener todas las etiquetas disponibles
-  const fetchLabels = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/leads/labels`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      setAvailableLabels(response.data);
-    } catch (err) {
-      console.error('Error al obtener etiquetas:', err);
-    }
   };
 
   // Función para guardar una etiqueta personalizada en la base de datos
@@ -661,7 +1060,7 @@ const LeadsPage = () => {
           } else {
             // Si no hay notas previas o estamos añadiendo una nueva
             updatedNotes = lead.notes && lead.notes.length > 0 
-              ? [response.data.note] // Reemplazar con la nueva nota
+              ? [...(lead.notes || []), response.data.note] // Mantener notas anteriores y añadir nueva
               : [response.data.note]; // Añadir la primera nota
           }
           
@@ -871,6 +1270,76 @@ const LeadsPage = () => {
     }
   };
 
+  // Función para obtener sugerencias de autocompletado
+  const fetchNicheSuggestions = async (text: string) => {
+    if (!text || text.length < 2) {  // Reducido de 3 a 2 caracteres
+      setSearchSuggestions([]);
+      return;
+    }
+    
+    try {
+      setLoadingSuggestions(true);
+      const token = localStorage.getItem('token');
+      
+      // Si hay dirección ingresada, usarla para mejorar las sugerencias
+      let params = new URLSearchParams({
+        input: text
+      });
+      
+      if (address) {
+        try {
+          // Geocodificar dirección para obtener coordenadas
+          const geoResponse = await axios.get(`${API_URL}/geocode?address=${encodeURIComponent(address)}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (geoResponse.data && geoResponse.data.lat && geoResponse.data.lng) {
+            params.append('location', `${geoResponse.data.lat},${geoResponse.data.lng}`);
+            params.append('radius', radius.toString());
+          }
+        } catch (err) {
+          console.error('Error al geocodificar dirección para sugerencias:', err);
+        }
+      }
+      
+      console.log(`Buscando sugerencias para: "${text}"`);
+      
+      // Obtener sugerencias utilizando el nuevo endpoint optimizado para nichos
+      const response = await axios.get(`${API_URL}/places/niche-suggestions?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      console.log(`Sugerencias recibidas:`, response.data.suggestions);
+      setSearchSuggestions(response.data.suggestions || []);
+    } catch (err) {
+      console.error('Error al obtener sugerencias:', err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  // Añadir debounce para no hacer demasiadas peticiones
+  const debouncedFetchSuggestions = useCallback(
+    debounce((text: string) => {
+      fetchNicheSuggestions(text);
+    }, 300),
+    [address, radius]
+  );
+
+  // Manejar cambios en el campo de búsqueda de nicho
+  const handleNicheQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setNicheQuery(value);
+    setShowSuggestions(true);
+    debouncedFetchSuggestions(value);
+  };
+
+  // Seleccionar una sugerencia
+  const handleSelectSuggestion = (suggestion: { description: string }) => {
+    setNicheQuery(suggestion.description);
+    setShowSuggestions(false);
+  };
+
   return (
     <div className="w-full px-4 py-8">
 
@@ -917,7 +1386,40 @@ const LeadsPage = () => {
         <div>
           <div className="bg-white shadow-md rounded-lg p-4 md:p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4">Buscar Negocios</h2>
+            
+            {/* Selector de modo de búsqueda */}
+            <div className="mb-4">
+              <div className="flex border border-gray-300 rounded-md overflow-hidden">
+                <button
+                  onClick={() => setSearchMode('keyword')}
+                  className={`flex-1 py-2 px-4 text-sm font-medium ${
+                    searchMode === 'keyword' 
+                      ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  Búsqueda por palabra clave
+                </button>
+                <button
+                  onClick={() => setSearchMode('type')}
+                  className={`flex-1 py-2 px-4 text-sm font-medium ${
+                    searchMode === 'type' 
+                      ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
+                      : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  Búsqueda por tipo de negocio
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {searchMode === 'keyword' 
+                  ? 'Busca cualquier tipo de negocio con palabras clave específicas' 
+                  : 'Selecciona un tipo específico de negocio para mejores resultados'}
+              </p>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              {searchMode === 'keyword' ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Término de búsqueda
@@ -930,6 +1432,57 @@ const LeadsPage = () => {
                   className="w-full p-2 border border-gray-300 rounded-md"
                 />
               </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Tipo de negocio o nicho
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={nicheQuery}
+                      onChange={handleNicheQueryChange}
+                      onFocus={() => setShowSuggestions(true)}
+                      placeholder="Escribe para buscar tipos de negocios..."
+                      className="w-full p-2 border border-gray-300 rounded-md"
+                    />
+                    
+                    {loadingSuggestions && (
+                      <div className="absolute right-3 top-2">
+                        <svg className="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                    )}
+                    
+                    {showSuggestions && searchSuggestions.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white shadow-lg max-h-60 rounded-md py-1 text-base overflow-auto focus:outline-none sm:text-sm border border-gray-300">
+                        {searchSuggestions.map((suggestion, index) => (
+                          <div
+                            key={index}
+                            onClick={() => handleSelectSuggestion(suggestion)}
+                            className="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100"
+                          >
+                            <div className="flex items-center">
+                              <span className="font-normal block truncate">{suggestion.description}</span>
+                            </div>
+                            {suggestion.types && suggestion.types.length > 0 && (
+                              <div className="flex flex-wrap mt-1 gap-1 pl-2">
+                                {suggestion.types.slice(0, 3).map((type, typeIndex) => (
+                                  <span key={typeIndex} className="text-xs bg-gray-100 text-gray-600 rounded px-1 py-0.5">
+                                    {type}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Dirección o Ciudad
@@ -960,9 +1513,15 @@ const LeadsPage = () => {
             <div className="flex flex-wrap gap-2 justify-end">
               <button
                 onClick={() => handleSearch(true)}
-                disabled={searchLoading || !query || !address}
+                disabled={
+                  searchLoading || 
+                  (searchMode === 'keyword' && (!query || !address)) ||
+                  (searchMode === 'type' && (!nicheQuery || !address))
+                }
                 className={`flex items-center px-4 py-2 rounded-md ${
-                  !searchLoading && query && address
+                  (!searchLoading && 
+                   ((searchMode === 'keyword' && query && address) ||
+                    (searchMode === 'type' && nicheQuery && address)))
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
                     : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                 }`}
@@ -977,27 +1536,67 @@ const LeadsPage = () => {
                   </>
                 ) : (
                   <>
-                    <Search className="w-4 h-4 mr-2" />
-                    Búsqueda Estándar
+                    <Search className="w-4 h-4 mr-2" /> Buscar
                   </>
                 )}
               </button>
               
               <button
                 onClick={handleFullSearch}
-                disabled={searchLoading || !query || !address}
-                title="Usa todas las estrategias combinadas para obtener el máximo de resultados"
+                disabled={
+                  searchLoading || 
+                  (searchMode === 'keyword' && (!query || !address)) ||
+                  (searchMode === 'type' && (!nicheQuery || !address))
+                }
                 className={`flex items-center px-4 py-2 rounded-md ${
-                  !searchLoading && query && address
+                  (!searchLoading && 
+                   ((searchMode === 'keyword' && query && address) ||
+                    (searchMode === 'type' && nicheQuery && address)))
                     ? 'bg-purple-600 text-white hover:bg-purple-700'
                     : 'bg-gray-400 text-gray-200 cursor-not-allowed'
                 }`}
               >
-                <Database className="w-4 h-4 mr-2" />
-                Búsqueda Completa
+                {searchLoading && streamingSearch ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Buscando en tiempo real...
+                  </>
+                ) : (
+                  <>
+                    <ZapIcon className="w-4 h-4 mr-2" /> Búsqueda Completa
+                  </>
+                )}
               </button>
+
+              {streamingSearch && (
+                <button
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded flex items-center ml-2"
+                  onClick={cancelStreamSearch}
+                >
+                  <X className="mr-2" />
+                  Cancelar
+                </button>
+              )}
             </div>
           </div>
+
+          {streamingSearch && searchProgress && (
+            <div className="mb-4">
+              <div className="text-sm text-gray-600 mb-1">
+                Progreso de búsqueda: {searchProgress.currentPoint} de {searchProgress.totalPoints} puntos
+                {searchProgress.subdivision && " (subdividiendo área)"}
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2.5">
+                <div 
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                  style={{ width: `${Math.min(100, Math.round((searchProgress.currentPoint / searchProgress.totalPoints) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {searchResults.length > 0 && (
             <div className="bg-white shadow-md rounded-lg p-4 md:p-6 mb-8">

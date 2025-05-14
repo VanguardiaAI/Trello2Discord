@@ -2,8 +2,28 @@ from flask import Blueprint, request, jsonify, current_app
 from bson.objectid import ObjectId
 from app.models.card_channel_mapping import CardChannelMapping
 from app.routes.integration import token_required, get_trello_service, get_discord_service
+from app.routes.debug import get_discord_user_id, get_trello_member_details
+from datetime import datetime
+from app.discord.bot import send_message_to_channel, create_discord_channel, send_message_with_button
+from app.routes.auth import token_required
+from app.models.user_mapping import UserMapping
 
 card_channel_bp = Blueprint('card_channel', __name__)
+
+def format_date_spanish(date_str):
+    """
+    Formatea una fecha ISO 8601 en formato español: DD/MM/YYYY HH:MM
+    """
+    if not date_str:
+        return "Sin fecha"
+    try:
+        # Convertir la cadena ISO a objeto datetime
+        date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        # Formatear la fecha en formato español
+        return date_obj.strftime('%d/%m/%Y %H:%M')
+    except Exception as e:
+        current_app.logger.error(f"Error al formatear fecha {date_str}: {e}")
+        return date_str
 
 @card_channel_bp.route('/integration/<integration_id>/lists', methods=['GET'])
 @token_required
@@ -170,10 +190,6 @@ def create_list_channel_mapping(current_user_id, integration_id):
                 cards = cards_response.json()
                 current_app.logger.info(f"Se encontraron {len(cards)} tarjetas en la lista {data['trello_list_id']}")
                 
-                # Importar funciones necesarias de debug.py
-                from app.discord.bot import send_message_to_channel, send_message_with_button
-                from app.routes.debug import get_discord_user_id, get_trello_member_details
-                
                 # Procesar cada tarjeta como si fuera nueva
                 for card in cards:
                     try:
@@ -189,7 +205,8 @@ def create_list_channel_mapping(current_user_id, integration_id):
                                     if card.get('desc'):
                                         confirmation_message += f"📝 **Descripción:** {card.get('desc')}\n"
                                     if card.get('due'):
-                                        confirmation_message += f"📅 **Fecha límite:** {card.get('due')}\n"
+                                        fecha_formateada = format_date_spanish(card.get('due'))
+                                        confirmation_message += f"📅 **Fecha límite:** {fecha_formateada}\n"
                                     if card.get('labels'):
                                         etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
                                         if etiquetas:
@@ -202,7 +219,7 @@ def create_list_channel_mapping(current_user_id, integration_id):
                                                 confirmation_message += f"- {adj.get('name', 'Archivo')}\n"
                                     confirmation_message += f"🙋‍♂️ **Asignado a:** <@{discord_user_id}>\n"
                                     if card.get('shortUrl'):
-                                        confirmation_message += f"\n📌 **Enlace a la tarjeta:** {card.get('shortUrl')}\n"
+                                        confirmation_message += f"📌 **Enlace a la tarjeta:** {card.get('shortUrl')}\n"
                                     confirmation_message += "\nPor favor, confirma que vista esta asignación haciendo clic en el botón:"
                                     send_message_with_button(
                                         data['discord_channel_id'],
@@ -219,7 +236,8 @@ def create_list_channel_mapping(current_user_id, integration_id):
                             if card.get('desc'):
                                 message += f"📝 **Descripción:** {card.get('desc')}\n"
                             if card.get('due'):
-                                message += f"📅 **Fecha límite:** {card.get('due')}\n"
+                                fecha_formateada = format_date_spanish(card.get('due'))
+                                message += f"📅 **Fecha límite:** {fecha_formateada}\n"
                             if card.get('labels'):
                                 etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
                                 if etiquetas:

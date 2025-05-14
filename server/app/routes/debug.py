@@ -24,6 +24,21 @@ monitored_board_id = None
 # Estado global para listas y tarjetas
 previous_lists_state = {}
 
+def format_date_spanish(date_str):
+    """
+    Formatea una fecha ISO 8601 en formato español: DD/MM/YYYY HH:MM
+    """
+    if not date_str:
+        return "Sin fecha"
+    try:
+        # Convertir la cadena ISO a objeto datetime
+        date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        # Formatear la fecha en formato español
+        return date_obj.strftime('%d/%m/%Y %H:%M')
+    except Exception as e:
+        current_app.logger.error(f"Error al formatear fecha {date_str}: {e}")
+        return date_str
+
 def get_trello_cards(board_id):
     """
     Obtiene todas las tarjetas de un tablero específico de Trello, incluyendo adjuntos, fecha de vencimiento y etiquetas.
@@ -315,7 +330,8 @@ def process_new_card_list_based(card):
                     if card.get('desc'):
                         confirmation_message += f"📝 **Descripción:** {card.get('desc')}\n"
                     if card.get('due'):
-                        confirmation_message += f"📅 **Fecha límite:** {card.get('due')}\n"
+                        fecha_formateada = format_date_spanish(card.get('due'))
+                        confirmation_message += f"📅 **Fecha límite:** {fecha_formateada}\n"
                     if card.get('labels'):
                         etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
                         if etiquetas:
@@ -345,7 +361,8 @@ def process_new_card_list_based(card):
             if card.get('desc'):
                 message += f"📝 **Descripción:** {card.get('desc')}\n"
             if card.get('due'):
-                message += f"📅 **Fecha límite:** {card.get('due')}\n"
+                fecha_formateada = format_date_spanish(card.get('due'))
+                message += f"📅 **Fecha límite:** {fecha_formateada}\n"
             if card.get('labels'):
                 etiquetas = ', '.join([label.get('name', '') for label in card.get('labels', []) if label.get('name')])
                 if etiquetas:
@@ -385,7 +402,9 @@ def process_updated_card_list_based(old_card, new_card):
             else:
                 cambios.append(f"⚠️ *Descripción eliminada para tarea '{new_card.get('name')}'*")
         if old_card.get('due') != new_card.get('due'):
-            cambios.append(f"📅 *Fecha límite cambiada para tarea '{new_card.get('name')}':* '{old_card.get('due', 'Sin fecha')}' → '{new_card.get('due', 'Sin fecha')}'")
+            old_due_fmt = format_date_spanish(old_card.get('due')) if old_card.get('due') else 'Sin fecha'
+            new_due_fmt = format_date_spanish(new_card.get('due')) if new_card.get('due') else 'Sin fecha'
+            cambios.append(f"📅 *Fecha límite cambiada para tarea '{new_card.get('name')}':* '{old_due_fmt}' → '{new_due_fmt}'")
         old_labels = set(label.get('name', '') for label in old_card.get('labels', []) if label.get('name'))
         new_labels = set(label.get('name', '') for label in new_card.get('labels', []) if label.get('name'))
         added_labels = new_labels - old_labels
@@ -420,7 +439,8 @@ def process_updated_card_list_based(old_card, new_card):
                     if new_card.get('desc'):
                         confirmation_message += f"📝 **Descripción:** {new_card.get('desc')}\n"
                     if new_card.get('due'):
-                        confirmation_message += f"📅 **Fecha límite:** {new_card['due']}\n"
+                        fecha_formateada = format_date_spanish(new_card.get('due'))
+                        confirmation_message += f"📅 **Fecha límite:** {fecha_formateada}\n"
                     if new_card.get('labels'):
                         etiquetas = ', '.join([label.get('name', '') for label in new_card.get('labels', []) if label.get('name')])
                         if etiquetas:
