@@ -48,7 +48,7 @@ const Navbar = () => {
           isScrolled ? 'shadow-nav bg-[#111110] text-white' : 'bg-[#111110] text-white'
         }`}
       >
-        <div className="container mx-auto px-4">
+        <div className="px-4 md:px-6">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center space-x-2">
               <Link to="/" className="text-xl font-bold flex items-center">

@@ -82,10 +82,6 @@ const LeadsPage = () => {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [showNotePopup, setShowNotePopup] = useState<boolean>(false);
   const [availableLabels, setAvailableLabels] = useState<string[]>([]);
-  const [defaultLabels] = useState<string[]>([
-    'Número equivocado', 'No contestan', 'Interesado', 'No interesado', 
-    'Por contactar', 'En seguimiento', 'Cliente potencial', 'Venta cerrada'
-  ]);
   const [newLabelText, setNewLabelText] = useState<string>('');
   const [showLabelForm, setShowLabelForm] = useState<boolean>(false);
   const [showLabelsManagement, setShowLabelsManagement] = useState<boolean>(false);
@@ -498,18 +494,36 @@ const LeadsPage = () => {
       setSavingLabel(true);
       const token = localStorage.getItem('token');
       
-      await axios.delete(
-        `${API_URL}/leads/labels/${encodeURIComponent(labelText)}`,
+      // Construimos la URL completa y la mostramos en consola para depuración
+      const url = `${API_URL}/leads/labels/${encodeURIComponent(labelText)}`;
+      console.log('URL para eliminar etiqueta:', url);
+      
+      const response = await axios.delete(
+        url,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      
+      console.log('Respuesta al eliminar etiqueta:', response.data);
+      
+      // Si se eliminó la etiqueta de algún lead, actualizamos también la lista de leads
+      if (response.data.deleted_from_custom_labels || response.data.message?.includes('leads')) {
+        fetchLeads();
+      }
       
       // Actualizar la lista de etiquetas disponibles
       fetchLabels();
       
       setError(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al eliminar etiqueta:', err);
-      setError('Error al eliminar etiqueta. Inténtalo de nuevo más tarde.');
+      
+      // Si el error es 404 (no encontrado), eliminamos la etiqueta de la lista local
+      if (err.response && err.response.status === 404) {
+        console.log('La etiqueta no existe en el servidor, actualizando lista local');
+        setAvailableLabels(availableLabels.filter(label => label !== labelText));
+      } else {
+        setError('Error al eliminar etiqueta. Inténtalo de nuevo más tarde.');
+      }
     } finally {
       setSavingLabel(false);
     }
@@ -858,7 +872,7 @@ const LeadsPage = () => {
   };
 
   return (
-    <div className="container-fluid w-full px-2 py-8">
+    <div className="w-full px-4 py-8">
 
       {/* Navegación por pestañas */}
       <div className="mb-6 border-b border-gray-200">
@@ -901,7 +915,7 @@ const LeadsPage = () => {
       {/* Contenido de la pestaña de búsqueda */}
       {activeTab === 'search' && (
         <div>
-          <div className="bg-white shadow-md rounded-lg p-6 mb-8">
+          <div className="bg-white shadow-md rounded-lg p-4 md:p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4">Buscar Negocios</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
@@ -986,7 +1000,7 @@ const LeadsPage = () => {
           </div>
 
           {searchResults.length > 0 && (
-            <div className="bg-white shadow-md rounded-lg p-6 mb-8">
+            <div className="bg-white shadow-md rounded-lg p-4 md:p-6 mb-8">
               <div className="flex justify-between items-center mb-4">
                 <div>
                   <h2 className="text-xl font-semibold">Resultados de búsqueda ({searchResults.length})</h2>
@@ -1041,68 +1055,70 @@ const LeadsPage = () => {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Seleccionar
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Estado
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Nombre
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Dirección
-                      </th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Rating
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {searchResults.map((place) => (
-                      <tr 
-                        key={place.place_id}
-                        onClick={() => togglePlaceSelection(place)}
-                        className={`hover:bg-gray-50 cursor-pointer ${
-                          isPlaceSelected(place.place_id) ? 'bg-blue-50' : ''
-                        }`}
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={isPlaceSelected(place.place_id)}
-                            onChange={() => togglePlaceSelection(place)}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {isPlaceInLeads(place.place_id) ? (
-                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex items-center">
-                              <Database className="w-3 h-3 mr-1" /> Guardado
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-500">Nuevo</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">{place.name}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-500">{place.address}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {place.rating ? `${place.rating} / 5` : 'Sin rating'}
-                          </div>
-                        </td>
+              <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm -mx-3 md:mx-0">
+                <div className="inline-block min-w-full align-middle">
+                  <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                          Seleccionar
+                        </th>
+                        <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
+                          Estado
+                        </th>
+                        <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Nombre
+                        </th>
+                        <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Dirección
+                        </th>
+                        <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">
+                          Rating
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {searchResults.map((place) => (
+                        <tr 
+                          key={place.place_id}
+                          onClick={() => togglePlaceSelection(place)}
+                          className={`hover:bg-gray-50 cursor-pointer ${
+                            isPlaceSelected(place.place_id) ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={isPlaceSelected(place.place_id)}
+                              onChange={() => togglePlaceSelection(place)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            {isPlaceInLeads(place.place_id) ? (
+                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 flex items-center">
+                                <Database className="w-3 h-3 mr-1" /> Guardado
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-500">Nuevo</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900 line-clamp-2" title={place.name}>{place.name}</div>
+                          </td>
+                          <td className="px-3 py-4">
+                            <div className="text-sm text-gray-500">{place.address}</div>
+                          </td>
+                          <td className="px-3 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {place.rating ? `${place.rating} / 5` : 'Sin rating'}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
               
               {nextPageToken && !allResultsFetched && (
@@ -1139,7 +1155,7 @@ const LeadsPage = () => {
 
       {/* Contenido de la pestaña de mis leads */}
       {activeTab === 'leads' && (
-        <div className="bg-white shadow-md rounded-lg p-4">
+        <div className="bg-white shadow-md rounded-lg p-3 md:p-4">
           <div className="flex flex-wrap justify-between items-center mb-4">
             <h2 className="text-xl font-semibold">Mis Leads ({leads.length})</h2>
             
@@ -1380,268 +1396,261 @@ const LeadsPage = () => {
               </button>
             </div>
           ) : (
-            <div className="overflow-x-auto w-full">
-              <table className="min-w-full divide-y divide-gray-200 rounded-lg overflow-hidden">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedLeads.length === getFilteredLeads().length && leads.length > 0}
-                          onChange={selectAllLeads}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
-                        />
-                      Nombre
-                      </div>
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Estado
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Etiquetas
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Teléfono
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Web
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Notas
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">
-                      Acciones
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {getFilteredLeads().map((lead) => (
-                    <tr key={lead.place_id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-4">
+            <div className="overflow-x-auto w-full border border-gray-200 rounded-lg shadow-sm -mx-3 md:mx-0">
+              <div className="inline-block min-w-full align-middle">
+                <table className="min-w-full divide-y divide-gray-200 table-fixed rounded-lg overflow-hidden">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-64">
                         <div className="flex items-center">
                           <input
                             type="checkbox"
-                            checked={selectedLeads.includes(lead.place_id)}
-                            onChange={() => toggleLeadSelection(lead.place_id)}
+                            checked={selectedLeads.length === getFilteredLeads().length && leads.length > 0}
+                            onChange={selectAllLeads}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
                           />
-                        <div className="text-sm font-medium text-gray-900">{lead.name}</div>
+                        Nombre
                         </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="relative">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setLeadWithStatusSelector(leadWithStatusSelector === lead.place_id ? null : lead.place_id);
-                            }}
-                            className="w-full text-left focus:outline-none"
-                          >
-                            <span className={`px-2 py-1 text-xs rounded-full ${
-                              lead.status === 'Interesado' ? 'bg-green-100 text-green-800' :
-                              lead.status === 'No interesado' ? 'bg-red-100 text-red-800' :
-                              lead.status === 'Contactado' ? 'bg-blue-100 text-blue-800' :
-                              lead.status === 'Por contactar' ? 'bg-yellow-100 text-yellow-800' :
-                              lead.status === 'En seguimiento' ? 'bg-purple-100 text-purple-800' :
-                              lead.status === 'Cliente' ? 'bg-indigo-100 text-indigo-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {lead.status || 'Nuevo'}
-                            </span>
-                          </button>
-                          {leadWithStatusSelector === lead.place_id && (
-                            <StatusSelector 
-                              lead={lead} 
-                              showSelector={true} 
-                              setShowSelector={(show) => {
-                                if (!show) setLeadWithStatusSelector(null);
-                              }} 
-                            />
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {(lead.labels || []).map((label, index) => (
-                            <span 
-                              key={index} 
-                              className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full"
-                            >
-                              {label}
-                            </span>
-                          ))}
-                          {(lead.labels || []).length === 0 && (
-                            <div className="flex items-center">
-                              <span className="text-xs text-gray-500 mr-2">Sin etiquetas</span>
-                              <button
-                                onClick={() => {
-                                  toggleLeadSelection(lead.place_id);
-                                  setShowLabelsManagement(true);
-                                }}
-                                className="text-blue-500 hover:text-blue-700 text-xs flex items-center"
-                                title="Añadir etiquetas"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-                          <button
-                            onClick={() => {
-                              toggleLeadSelection(lead.place_id);
-                              setShowLabelsManagement(true);
-                            }}
-                            className="ml-1 text-blue-500 hover:text-blue-700 text-xs"
-                            title="Gestionar etiquetas"
-                          >
-                            <Tag className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        {lead.phone ? (
-                          <a href={`tel:${lead.phone}`} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
-                            {lead.phone}
-                          </a>
-                        ) : (
-                          <span className="text-sm text-gray-500">N/A</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        {editingLeadId === lead.place_id ? (
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-28">
+                        Estado
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-32">
+                        Etiquetas
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-32">
+                        Teléfono
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-36">
+                        Email
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-24">
+                        Web
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-64">
+                        Notas
+                      </th>
+                      <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-24">
+                        Acciones
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {getFilteredLeads().map((lead) => (
+                      <tr key={lead.place_id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-4">
                           <div className="flex items-center">
                             <input
-                              type="email"
-                              value={editingEmail}
-                              onChange={(e) => setEditingEmail(e.target.value)}
-                              className="w-full p-1 text-sm border border-gray-300 rounded-md"
-                              placeholder="Agregar email"
-                              autoFocus
+                              type="checkbox"
+                              checked={selectedLeads.includes(lead.place_id)}
+                              onChange={() => toggleLeadSelection(lead.place_id)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
                             />
-                            <div className="flex ml-2">
-                              <button
-                                onClick={() => saveEmail(lead.place_id)}
-                                disabled={savingEmail}
-                                className="text-green-600 hover:text-green-800 mr-1"
-                                title="Guardar"
-                              >
-                                <Save className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={cancelEditingEmail}
-                                className="text-red-600 hover:text-red-800"
-                                title="Cancelar"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
+                          <div className="text-sm font-medium text-gray-900 line-clamp-2" title={lead.name}>{lead.name}</div>
                           </div>
-                        ) : (
-                          <div className="flex items-center">
-                            {lead.email ? (
-                              <a href={`mailto:${lead.email}`} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
-                                <Mail className="w-4 h-4 mr-1" />
-                                {lead.email}
-                              </a>
-                            ) : (
-                              <span className="text-sm text-gray-500">N/A</span>
-                            )}
-                            <button
-                              onClick={() => startEditingEmail(lead)}
-                              className="ml-2 text-gray-500 hover:text-gray-700"
-                              title="Editar email"
+                        </td>
+                        <td className="px-3 py-4">
+                          <div className="relative">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLeadWithStatusSelector(leadWithStatusSelector === lead.place_id ? null : lead.place_id);
+                              }}
+                              className="w-full text-left focus:outline-none"
                             >
-                              <Edit className="w-4 h-4" />
+                              <span className={`px-2 py-1 text-xs rounded-full ${
+                                lead.status === 'Interesado' ? 'bg-green-100 text-green-800' :
+                                lead.status === 'No interesado' ? 'bg-red-100 text-red-800' :
+                                lead.status === 'Contactado' ? 'bg-blue-100 text-blue-800' :
+                                lead.status === 'Por contactar' ? 'bg-yellow-100 text-yellow-800' :
+                                lead.status === 'En seguimiento' ? 'bg-purple-100 text-purple-800' :
+                                lead.status === 'Cliente' ? 'bg-indigo-100 text-indigo-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {lead.status || 'Nuevo'}
+                              </span>
                             </button>
+                            {leadWithStatusSelector === lead.place_id && (
+                              <StatusSelector 
+                                lead={lead} 
+                                showSelector={true} 
+                                setShowSelector={(show) => {
+                                  if (!show) setLeadWithStatusSelector(null);
+                                }} 
+                              />
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        {lead.website ? (
-                          <a 
-                            href={lead.website} 
-                            target="_blank" 
-                            rel="noopener noreferrer" 
-                            className="text-blue-600 hover:text-blue-800 text-sm hover:underline"
-                          >
-                            {new URL(lead.website).hostname}
-                          </a>
-                        ) : (
-                          <span className="text-sm text-gray-500">N/A</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-4">
-                        <div>
-                          {(lead.notes || []).length > 0 ? (
-                            <div className="mb-1 group relative">
-                              <div className="text-sm text-gray-500 truncate max-w-xs">
-                                {lead.notes && lead.notes[0] ? lead.notes[0].content : ''}
-                              </div>
-                              <div className="flex mt-1 gap-2">
+                        </td>
+                        <td className="px-3 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {(lead.labels || []).map((label, index) => (
+                              <span 
+                                key={index} 
+                                className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                            {(lead.labels || []).length === 0 && (
+                              <div className="flex items-center">
+                                <span className="text-xs text-gray-500 mr-2">Sin etiquetas</span>
                                 <button
-                                  onClick={() => lead.notes && lead.notes[0] && startEditingNote(lead.place_id, lead.notes[0])}
+                                  onClick={() => {
+                                    toggleLeadSelection(lead.place_id);
+                                    setShowLabelsManagement(true);
+                                  }}
                                   className="text-blue-500 hover:text-blue-700 text-xs flex items-center"
+                                  title="Añadir etiquetas"
                                 >
-                                  <Edit className="w-3 h-3 mr-1" /> Editar
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-4">
+                          {lead.phone ? (
+                            <a href={`tel:${lead.phone}`} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                              {lead.phone}
+                            </a>
+                          ) : (
+                            <span className="text-sm text-gray-500">N/A</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-left">
+                          {editingLeadId === lead.place_id ? (
+                            <div className="flex items-center">
+                              <input
+                                type="email"
+                                value={editingEmail}
+                                onChange={(e) => setEditingEmail(e.target.value)}
+                                className="w-full p-1 text-sm border border-gray-300 rounded-md"
+                                placeholder="Agregar email"
+                                autoFocus
+                              />
+                              <div className="flex ml-2">
+                                <button
+                                  onClick={() => saveEmail(lead.place_id)}
+                                  disabled={savingEmail}
+                                  className="text-green-600 hover:text-green-800 mr-1"
+                                  title="Guardar"
+                                >
+                                  <Save className="w-4 h-4" />
                                 </button>
                                 <button
-                                  onClick={() => lead.notes && lead.notes[0] && deleteNoteFromLead(lead.place_id, lead.notes[0].id)}
-                                  className="text-red-500 hover:text-red-700 text-xs flex items-center"
+                                  onClick={cancelEditingEmail}
+                                  className="text-red-600 hover:text-red-800"
+                                  title="Cancelar"
                                 >
-                                  <Trash2 className="w-3 h-3 mr-1" /> Eliminar
+                                  <X className="w-4 h-4" />
                                 </button>
                               </div>
                             </div>
                           ) : (
-                            <button
-                              onClick={() => openAddNotePopup(lead.place_id)}
-                              className="text-gray-500 hover:text-gray-700 text-xs flex items-center"
-                            >
-                              <Plus className="w-3 h-3 mr-1" /> Añadir nota
-                            </button>
+                            <div className="flex items-center">
+                              {lead.email ? (
+                                <a href={`mailto:${lead.email}`} className="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                                  <Mail className="w-4 h-4 mr-1" />
+                                  <span className="truncate" title={lead.email}>{lead.email}</span>
+                                </a>
+                              ) : (
+                                <span className="text-sm text-gray-500">N/A</span>
+                              )}
+                              <button
+                                onClick={() => startEditingEmail(lead)}
+                                className="ml-2 text-gray-500 hover:text-gray-700"
+                                title="Editar email"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            </div>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => toggleLeadSelection(lead.place_id)}
-                            className="text-gray-500 hover:text-gray-700"
-                            title="Seleccionar"
-                          >
-                            <Check className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              toggleLeadSelection(lead.place_id);
-                              setShowLabelsManagement(true);
-                            }}
-                            className="text-blue-500 hover:text-blue-700"
-                            title="Gestionar etiquetas"
-                          >
-                            <Tag className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('¿Estás seguro de que quieres eliminar este lead?')) {
-                                setSelectedLeads([lead.place_id]);
-                                deleteSelectedLeads();
-                              }
-                            }}
-                            className="text-red-500 hover:text-red-700"
-                            title="Eliminar"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </td>
+                        <td className="px-3 py-4 text-left">
+                          {lead.website ? (
+                            <a 
+                              href={lead.website} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-blue-600 hover:text-blue-800 text-sm hover:underline truncate block text-left"
+                              title={lead.website}
+                            >
+                              {new URL(lead.website).hostname.replace('www.', '')}
+                            </a>
+                          ) : (
+                            <span className="text-sm text-gray-500 text-left">N/A</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-4 text-left">
+                          <div>
+                            {(lead.notes || []).length > 0 ? (
+                              <div className="mb-1 group relative">
+                                <div className="text-sm text-gray-700 line-clamp-2 max-w-full">
+                                  {lead.notes && lead.notes[0] ? lead.notes[0].content : ''}
+                                </div>
+                                <div className="flex mt-1 gap-2">
+                                  <button
+                                    onClick={() => lead.notes && lead.notes[0] && startEditingNote(lead.place_id, lead.notes[0])}
+                                    className="text-blue-500 hover:text-blue-700 text-xs flex items-center"
+                                  >
+                                    <Edit className="w-3 h-3 mr-1" /> Editar
+                                  </button>
+                                  <button
+                                    onClick={() => lead.notes && lead.notes[0] && deleteNoteFromLead(lead.place_id, lead.notes[0].id)}
+                                    className="text-red-500 hover:text-red-700 text-xs flex items-center"
+                                  >
+                                    <Trash2 className="w-3 h-3 mr-1" /> Eliminar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => openAddNotePopup(lead.place_id)}
+                                className="text-gray-500 hover:text-gray-700 text-xs flex items-center"
+                              >
+                                <Plus className="w-3 h-3 mr-1" /> Añadir nota
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-4 text-left">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => toggleLeadSelection(lead.place_id)}
+                              className="text-gray-500 hover:text-gray-700"
+                              title="Seleccionar"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                toggleLeadSelection(lead.place_id);
+                                setShowLabelsManagement(true);
+                              }}
+                              className="text-blue-500 hover:text-blue-700"
+                              title="Gestionar etiquetas"
+                            >
+                              <Tag className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm('¿Estás seguro de que quieres eliminar este lead?')) {
+                                  setSelectedLeads([lead.place_id]);
+                                  deleteSelectedLeads();
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-700"
+                              title="Eliminar"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
@@ -1709,21 +1718,9 @@ const LeadsPage = () => {
             </div>
             
             <div className="mb-6">
-              <h4 className="font-medium text-sm text-gray-600 mb-2">Etiquetas predeterminadas</h4>
-              <div className="flex flex-wrap gap-2 mb-4">
-                {defaultLabels.map(label => (
-                  <div 
-                    key={label}
-                    className="px-3 py-2 bg-gray-100 text-gray-700 rounded-md flex items-center"
-                  >
-                    {label}
-                  </div>
-                ))}
-              </div>
-              
               <h4 className="font-medium text-sm text-gray-600 mb-2">Etiquetas personalizadas</h4>
               <div className="flex flex-wrap gap-2 mb-4">
-                {availableLabels.filter(label => !defaultLabels.includes(label)).map(label => (
+                {availableLabels.map(label => (
                   <div 
                     key={label}
                     className="px-3 py-2 bg-blue-50 text-blue-700 rounded-md flex items-center group relative"
@@ -1751,7 +1748,7 @@ const LeadsPage = () => {
                   </div>
                 ))}
                 
-                {availableLabels.filter(label => !defaultLabels.includes(label)).length === 0 && (
+                {availableLabels.length === 0 && (
                   <div className="text-gray-500 text-sm">No hay etiquetas personalizadas.</div>
                 )}
               </div>

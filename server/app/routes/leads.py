@@ -4,6 +4,7 @@ import csv
 from io import StringIO
 import os
 from datetime import datetime
+import urllib.parse  # Añadir esta importación para decodificar URLs
 
 leads_bp = Blueprint('leads', __name__)
 
@@ -280,12 +281,31 @@ def delete_custom_label(label):
     """Eliminar una etiqueta personalizada"""
     db = current_app.config['MONGO_DB']
     
-    result = db.custom_labels.delete_one({"label": label})
+    # Decodificar la etiqueta (por si viene codificada en la URL)
+    decoded_label = urllib.parse.unquote(label)
+    print(f"Intento eliminar etiqueta: '{decoded_label}'")
     
-    if result.deleted_count == 0:
+    # Primero, intentamos eliminar de la colección custom_labels
+    result = db.custom_labels.delete_one({"label": decoded_label})
+    deleted_from_labels = result.deleted_count > 0
+    
+    # Segundo, eliminar la etiqueta de todos los leads que la contienen
+    update_result = db.leads.update_many(
+        {"labels": decoded_label},
+        {"$pull": {"labels": decoded_label}}
+    )
+    
+    if update_result.modified_count > 0:
+        print(f"Etiqueta '{decoded_label}' eliminada de {update_result.modified_count} leads")
+        return jsonify({
+            "message": f"Etiqueta eliminada de {update_result.modified_count} leads",
+            "deleted_from_custom_labels": deleted_from_labels
+        }), 200
+    elif deleted_from_labels:
+        return jsonify({"message": "Etiqueta eliminada correctamente"}), 200
+    else:
+        print(f"Etiqueta no encontrada: '{decoded_label}'")
         return jsonify({"error": "Etiqueta no encontrada"}), 404
-    
-    return jsonify({"message": "Etiqueta eliminada correctamente"}), 200
 
 @leads_bp.route("/leads/export", methods=["GET"])
 @auth_optional

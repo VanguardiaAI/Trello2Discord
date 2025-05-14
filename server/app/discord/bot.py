@@ -105,6 +105,9 @@ def init_discord_bot():
                             await interaction.message.edit(content=new_content, view=None)
                             logger.info(f"[Discord] Mensaje editado correctamente tras confirmación.")
                             
+                            # Nos aseguramos de que el separador siga presente debajo del mensaje
+                            # No necesitamos enviar un nuevo separador porque ya existe uno después de cada mensaje con botón
+                            
                             # Eliminar el callback ya que ha sido utilizado
                             del button_callbacks[custom_id]
                         except Exception as e:
@@ -272,6 +275,11 @@ async def _send_message_with_button_async(channel_id, message, button_label, tre
         # Enviar el mensaje con el botón
         await channel.send(message, view=view)
         logger.info(f"Mensaje con botón enviado al canal {channel.name} (ID: {channel_id})")
+        
+        # Enviar separador después del mensaje con botón
+        await channel.send("───────────────────────────────────────")
+        logger.info(f"Separador enviado después del mensaje con botón al canal {channel.name} (ID: {channel_id})")
+        
         return True
     except discord.Forbidden:
         logger.error(f"No tengo permisos para enviar mensajes al canal {channel_id}")
