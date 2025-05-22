@@ -407,7 +407,7 @@ def process_updated_card_list_based(old_card, new_card):
         if old_card.get('due') != new_card.get('due'):
             old_due_fmt = format_date_spanish(old_card.get('due')) if old_card.get('due') else 'Sin fecha'
             new_due_fmt = format_date_spanish(new_card.get('due')) if new_card.get('due') else 'Sin fecha'
-            cambios.append(f"📅 *Fecha límite cambiada para tarea '{new_card.get('name')}':* '{old_due_fmt}' → '{new_due_fmt}'")
+            cambios.append(f"📅 *Fecha límite cambiada para la tarea '{new_card.get('name')}':* '{old_due_fmt}' → '{new_due_fmt}'")
         old_labels = set(label.get('name', '') for label in old_card.get('labels', []) if label.get('name'))
         new_labels = set(label.get('name', '') for label in new_card.get('labels', []) if label.get('name'))
         added_labels = new_labels - old_labels
