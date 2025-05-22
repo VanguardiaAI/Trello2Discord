@@ -26,7 +26,7 @@ previous_lists_state = {}
 
 def format_date_spanish(date_str):
     """
-    Formatea una fecha ISO 8601 en formato español: DD/MM/YYYY HH:MM
+    Formatea una fecha ISO 8601 en formato español: DD/MM/YYYY HH:MMhrs
     Ajustada a la hora de España peninsular (UTC+2)
     """
     if not date_str:
@@ -34,10 +34,10 @@ def format_date_spanish(date_str):
     try:
         # Convertir la cadena ISO a objeto datetime
         date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-        # Añadir 2 horas para ajustar a la hora de España peninsular
-        date_obj = date_obj + datetime.timedelta(hours=2)
+        # Añadir 4 horas para ajustar a la hora de España peninsular
+        date_obj = date_obj + datetime.timedelta(hours=4)
         # Formatear la fecha en formato español
-        return date_obj.strftime('%d/%m/%Y %H:%M')
+        return date_obj.strftime('%d/%m/%Y %H:%M') + "hrs"
     except Exception as e:
         current_app.logger.error(f"Error al formatear fecha {date_str}: {e}")
         return date_str
