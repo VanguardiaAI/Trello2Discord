@@ -507,21 +507,33 @@ def polling_thread(app=None):
     
     print(f"Iniciando hilo de polling de Trello con app={app}")
     
+    with app.app_context():
+        current_app.logger.info("=== HILO DE POLLING INICIADO ===")
+        current_app.logger.info(f"polling_active: {polling_active}")
+        current_app.logger.info(f"monitored_board_id: {monitored_board_id}")
+    
     while polling_active:
         try:
             # Con aplicación Flask como contexto
             with app.app_context():
+                current_app.logger.debug("Ejecutando detect_and_process_trello_changes...")
                 detect_and_process_trello_changes()
         except Exception as e:
             # Capturar cualquier excepción para evitar que el hilo se detenga
             print(f"Error en el hilo de polling: {e}")
+            with app.app_context():
+                current_app.logger.error(f"Error en el hilo de polling: {e}")
             import traceback
             print(traceback.format_exc())
+            with app.app_context():
+                current_app.logger.error(traceback.format_exc())
         
         # Esperar 10 segundos antes de la siguiente verificación
         time.sleep(10)
     
     print("Hilo de polling de Trello detenido")
+    with app.app_context():
+        current_app.logger.info("=== HILO DE POLLING DETENIDO ===")
 
 @debug_bp.route('/trello/start-monitoring/<board_id>', methods=['POST'])
 def start_monitoring(board_id):
@@ -626,10 +638,51 @@ def monitoring_status():
     """
     global polling_active, monitored_board_id
     
+    current_app.logger.info(f"Estado del monitoreo consultado - Active: {polling_active}, Board: {monitored_board_id}")
+    
     return jsonify({
         'status': 'success',
         'active': polling_active,
-        'monitored_board_id': monitored_board_id
+        'monitored_board_id': monitored_board_id,
+        'timestamp': datetime.utcnow().isoformat()
+    }), 200
+
+@debug_bp.route('/trello/monitoring-debug', methods=['GET'])
+def monitoring_debug():
+    """
+    Obtiene información detallada para debugging del monitoreo
+    """
+    global polling_active, monitored_board_id, previous_lists_state, previous_cards_state
+    
+    debug_info = {
+        'polling_active': polling_active,
+        'monitored_board_id': monitored_board_id,
+        'previous_lists_count': len(previous_lists_state) if previous_lists_state else 0,
+        'previous_cards_count': len(previous_cards_state) if previous_cards_state else 0,
+        'timestamp': datetime.utcnow().isoformat()
+    }
+    
+    # Intentar obtener datos actuales de Trello para verificar conectividad
+    if monitored_board_id:
+        try:
+            current_lists = get_trello_lists(monitored_board_id)
+            current_cards = get_trello_cards(monitored_board_id)
+            debug_info['trello_connectivity'] = {
+                'lists_available': len(current_lists) if current_lists else 0,
+                'cards_available': len(current_cards) if current_cards else 0,
+                'connection_ok': bool(current_lists and current_cards)
+            }
+        except Exception as e:
+            debug_info['trello_connectivity'] = {
+                'error': str(e),
+                'connection_ok': False
+            }
+    
+    current_app.logger.info(f"Debug info: {debug_info}")
+    
+    return jsonify({
+        'status': 'success',
+        'debug_info': debug_info
     }), 200
 
 # Rutas originales de debug.py
