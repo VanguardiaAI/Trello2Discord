@@ -257,14 +257,17 @@ def detect_and_process_trello_changes():
     global previous_lists_state, previous_cards_state, polling_active, monitored_board_id
     from flask import current_app
     if not monitored_board_id:
+        current_app.logger.info("No hay tablero configurado para monitorear")
         print("No hay tablero configurado para monitorear")
         return
     try:
+        current_app.logger.info(f"Verificando cambios en el tablero {monitored_board_id}")
         print(f"Verificando cambios en el tablero {monitored_board_id}")
         # Obtener estado actual de listas y tarjetas
         current_lists = get_trello_lists(monitored_board_id)
         current_cards = get_trello_cards(monitored_board_id)
         if not current_lists or not current_cards:
+            current_app.logger.warning("No se pudieron obtener listas o tarjetas actuales")
             print("No se pudieron obtener listas o tarjetas actuales")
             return
         current_lists_dict = {lst['id']: lst for lst in current_lists if not lst.get('closed', False)}
@@ -278,29 +281,36 @@ def detect_and_process_trello_changes():
         # --- DETECTAR NUEVAS LISTAS ---
         for list_id, lst in current_lists_dict.items():
             if list_id not in previous_lists_state:
+                current_app.logger.info(f"Nueva lista detectada: {lst['name']} (ID: {list_id})")
                 print(f"Nueva lista detectada: {lst['name']} (ID: {list_id})")
                 # Obtener integración para el board actual
                 db = current_app.config['MONGO_DB']
                 integration = db.integrations.find_one({'trello_board_id': monitored_board_id})
                 if not integration or 'discord_server_id' not in integration:
+                    current_app.logger.error("No se encontró la integración o el discord_server_id para este board")
                     print("No se encontró la integración o el discord_server_id para este board")
                     continue
                 guild_id = integration['discord_server_id']
                 # Crear canal de Discord y mapear
                 channel_name = f"{lst['name'].lower().replace(' ', '-')[:90]}"
                 safe_name = re.sub(r'[^a-zA-Z0-9_-]', '-', channel_name)
+                current_app.logger.info(f"Intentando crear canal de Discord: {safe_name} en servidor {guild_id}")
                 discord_channel_id = create_discord_channel(safe_name, guild_id)
                 if discord_channel_id:
+                    current_app.logger.info(f"Canal de Discord creado exitosamente: {discord_channel_id}")
                     save_list_channel_mapping(list_id, lst['name'], discord_channel_id)
                 else:
+                    current_app.logger.error(f"ERROR: No se pudo crear canal de Discord para la lista {list_id}")
                     print(f"ERROR: No se pudo crear canal de Discord para la lista {list_id}")
         # --- DETECTAR NUEVAS TARJETAS Y ACTUALIZACIONES ---
         for card_id, card in current_cards_dict.items():
             if card_id not in previous_cards_state:
+                current_app.logger.info(f"Nueva tarjeta detectada: {card['name']} (ID: {card_id})")
                 print(f"Nueva tarjeta detectada: {card['name']} (ID: {card_id})")
                 process_new_card_list_based(card)
             else:
                 if card.get('dateLastActivity') != previous_cards_state[card_id].get('dateLastActivity'):
+                    current_app.logger.info(f"Tarjeta actualizada: {card['name']} (ID: {card_id})")
                     print(f"Tarjeta actualizada: {card['name']} (ID: {card_id})")
                     process_updated_card_list_based(previous_cards_state[card_id], card)
         # Actualizar estado

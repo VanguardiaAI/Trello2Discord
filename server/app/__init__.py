@@ -19,8 +19,26 @@ CORS(app, resources={r"/api/*": {"origins": os.environ.get('FRONTEND_ORIGIN', "h
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # Configurar logging
-logging.basicConfig(level=logging.INFO)
-app.logger.setLevel(logging.INFO)
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/tmp/trello2discord.log', mode='a')
+    ]
+)
+app.logger.setLevel(logging.DEBUG)
+
+# Configurar loggers específicos para componentes importantes
+discord_logger = logging.getLogger('discord')
+discord_logger.setLevel(logging.DEBUG)
+
+trello_logger = logging.getLogger('trello')
+trello_logger.setLevel(logging.DEBUG)
+
+# Logger para el bot de Discord
+bot_logger = logging.getLogger('app.discord.bot')
+bot_logger.setLevel(logging.DEBUG)
 
 # Clase personalizada para JSON encoder para MongoDB
 class CustomJSONEncoder(json.JSONEncoder):
