@@ -4,7 +4,7 @@ import requests
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from app.discord.bot import send_message_to_channel, create_discord_channel, send_message_with_button
 from app.models.user_mapping import UserMapping
@@ -35,7 +35,7 @@ def format_date_spanish(date_str):
         # Convertir la cadena ISO a objeto datetime
         date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         # Añadir 2 horas para ajustar a la hora de España peninsular
-        date_obj = date_obj + datetime.timedelta(hours=2)
+        date_obj = date_obj + timedelta(hours=2)
         # Formatear la fecha en formato español
         return date_obj.strftime('%d/%m/%Y %H:%M') + "hrs"
     except Exception as e:
